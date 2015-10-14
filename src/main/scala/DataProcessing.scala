@@ -55,9 +55,10 @@ object DataProcessing {
   val pgtestvh = "data_quality.voltagehigh"
   val pgtestvo = "data_quality.voltageout"
   val pgtestvop = "data_quality.voltageout_phc"
-  val pgdti = "data_quality.datetimeinterval"
   val pgbasereading = "basereading"
+  val pgenddevice = "enddevice"
   val pgido = "identifiedobject"
+  val pgmeter = "meter"
 
   // UDF applied to DataFrame columns
   val toIntg = udf((d: java.math.BigDecimal) => d.toString.toInt)
@@ -1210,15 +1211,42 @@ object DataProcessing {
 
     import sqlContext.implicits._
 
-    // Create DataFrame Schema for identifiedobject table
+    // Cache the meter id DF for reuse
+    val meterIdDF = vDF.select("ID").distinct().cache() // rdd.persist(StorageLevel.MEMORY_AND_DISK_SER) //cache()
+
+    // Create DataFrame Schema for SGDM identifiedobject table
     val schemaIDO = StructType(List(StructField("identifiedobjectid", LongType), StructField("aliasname", StringType), StructField("description", StringType), 
                                     StructField("mrid", StringType), StructField("name", StringType) ))
 
-    val meterIdoRDD = vDF.select("ID").distinct().rdd.map(r => Row(r.getDecimal(0).toString.toLong, null, "meter", null, null))  
+    val meterIdoRDD = meterIdDF.map(r => Row(r.getDecimal(0).toString.toLong, null, "meter", null, null))  
 
     val meterIdoDF = sqlContext.createDataFrame(meterIdoRDD, schemaIDO)
 
+    // Populate SGDM identifiedobject table
     meterIdoDF.write.mode("append").jdbc(pgurl, pgido, new java.util.Properties)
+
+    // Create DataFrame Schema for SGDM enddevice table
+    val schemaED = StructType(List(StructField("enddeviceid", LongType), StructField("ispan", BooleanType), StructField("isvirtual", BooleanType),
+                                   StructField("timezoneoffset", DoubleType), StructField("usagepoint", LongType), StructField("enddeviceinfo", LongType),
+                                   StructField("servicelocation", LongType), StructField("customer", LongType), StructField("assetcontainerid", LongType),
+                                   StructField("installcode", StringType), StructField("amrsystem", StringType) )) 
+
+    val edRDD = meterIdDF.map(r => Row(r.getDecimal(0).toString.toLong, null, null, null, null, null, null, null, null, null, null))  
+
+    val edDF = sqlContext.createDataFrame(edRDD, schemaED)
+
+    // Populate SGDM enddevice table
+    edDF.write.mode("append").jdbc(pgurl, pgenddevice, new java.util.Properties)
+
+    // Create DataFrame Schema for SGDM meter table
+    val schemaMeter = StructType(List(StructField("meterid", LongType), StructField("formnumber", StringType), StructField("description", StringType))) 
+
+    val metertblRDD = meterIdDF.map(r => Row(r.getDecimal(0).toString.toLong, null, null))  
+
+    val metertblDF = sqlContext.createDataFrame(metertblRDD, schemaMeter)
+
+    // Populate SGDM meter table
+    metertblDF.write.mode("append").jdbc(pgurl, pgmeter, new java.util.Properties)
   }
 
 
