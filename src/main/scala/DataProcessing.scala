@@ -134,7 +134,7 @@ object DataProcessing {
     import sqlContext.implicits._
 
     // Convert Voltage 96 columns to rows
-    val vDF = convCol2RowV(sqlContext, voltDF)  //.sort("ID", "DTI", "PHASE_FLAG")
+    val vDF = convCol2RowV(sqlContext, voltDF).sort("ID", "DTI", "PHASE_FLAG").cache()
 
     // Convert Phase A,B,C rows into Column Phase_A, Phase_B, Phase_C
     //val vfDF = convPhaseRow2Col(sqlContext, vDF).sort("ID", "DATA_DATE", "TIMEIDX")
@@ -220,6 +220,7 @@ object DataProcessing {
     //val highVolDF = mrdsm.filter("code = 'V' and value > 278.8 and value < 279").withColumn("prbcode", toVolHigh(mrdsm("idodesc")))
     //val missingVolDF = mrdsm.filter("code = 'V' and value < 0.1").withColumn("prbcode", toVolMissing(mrdsm("idodesc")))
 
+    vDF
   }
 
   /**
@@ -1204,7 +1205,7 @@ object DataProcessing {
    * Populate SGDM meter-related tables: identifiedobject, enddevice, meter, etc.
    *
    */
-  def popSgdmTables(sc: SparkContext, sqlContext: SQLContext) = {
+  def popSgdmTables(sc: SparkContext, sqlContext: SQLContext, vDF: DataFrame) = {
 
     import sqlContext.implicits._
 

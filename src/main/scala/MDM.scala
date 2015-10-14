@@ -95,7 +95,7 @@ object MDM {
     val rdtyMap = DataProcessing.getReadingType(sqlContext, rdtyDF, mskDF, phaseDF)
 
     // Processing Voltage data
-//    DataProcessing.voltProcessing(sc, sqlContext, voltDF, rdtyMap)
+//  val vDF = DataProcessing.voltProcessing(sc, sqlContext, voltDF, rdtyMap)
 
     // Processing Active and Reactive Power data
 //    DataProcessing.powerProcessing(sc, sqlContext, powerDF, rdtyMap)
@@ -110,7 +110,7 @@ object MDM {
     DataProcessing.enerProcessing(sc, sqlContext, readDF, rdtyMap)
 
     // Populate additional SGDM tables in PostgreSQL (identifiedobject, enddevice, meter, etc.)
-    DataProcessing.popSgdmTables(sc, sqlContext)
+    DataProcessing.popSgdmTables(sc, sqlContext, vDF)
 
   }
 }
