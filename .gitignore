@@ -1,2 +1,6 @@
 target/
 project/target/
+*.class
+*.cache
+*.o
+.*.swp

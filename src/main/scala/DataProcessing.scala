@@ -57,6 +57,7 @@ object DataProcessing {
   val pgtestvop = "data_quality.voltageout_phc"
   val pgdti = "data_quality.datetimeinterval"
   val pgbasereading = "basereading"
+  val pgido = "identifiedobject"
 
   // UDF applied to DataFrame columns
   val toIntg = udf((d: java.math.BigDecimal) => d.toString.toInt)
@@ -1209,8 +1210,15 @@ object DataProcessing {
 
     import sqlContext.implicits._
 
-      
+    // Create DataFrame Schema for identifiedobject table
+    val schemaIDO = StructType(List(StructField("identifiedobjectid", LongType), StructField("aliasname", StringType), StructField("description", StringType), 
+                                    StructField("mrid", StringType), StructField("name", StringType) ))
 
+    val meterIdoRDD = vDF.select("ID").distinct().rdd.map(r => Row(r.getDecimal(0).toString.toLong, null, "meter", null, null))  
+
+    val meterIdoDF = sqlContext.createDataFrame(meterIdoRDD, schemaIDO)
+
+    meterIdoDF.write.mode("append").jdbc(pgurl, pgido, new java.util.Properties)
   }
 
 

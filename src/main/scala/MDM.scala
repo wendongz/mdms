@@ -63,7 +63,7 @@ object MDM {
     import sqlContext.implicits._
 
     val appDir = "/home/admin/apps/MDM/"
-    val numDays = 3258
+    val numDays = 3258 // from historical real meter system
 
     /*
      * Reading data from Oracle (or PostgreSQL, Parquet, CSV, etc.)
@@ -89,22 +89,22 @@ object MDM {
      // Populate SGDM datetimeinterval table (3258 days)
     val dtiDF = DataProcessing.popDTItv(sc, sqlContext, numDays)
 
-//    dtiDF.write.mode("append").jdbc(pgurl, pgdti, new java.util.Properties)
+    dtiDF.write.mode("append").jdbc(pgurl, pgdti, new java.util.Properties)
 
     // Generate DataFrame from readingtype-measurementkind-phase, and return a Map
     val rdtyMap = DataProcessing.getReadingType(sqlContext, rdtyDF, mskDF, phaseDF)
 
     // Processing Voltage data
-//  val vDF = DataProcessing.voltProcessing(sc, sqlContext, voltDF, rdtyMap)
+    val vDF = DataProcessing.voltProcessing(sc, sqlContext, voltDF, rdtyMap)
 
     // Processing Active and Reactive Power data
-//    DataProcessing.powerProcessing(sc, sqlContext, powerDF, rdtyMap)
+    DataProcessing.powerProcessing(sc, sqlContext, powerDF, rdtyMap)
 
     // Processing Current data
-//    DataProcessing.curProcessing(sc, sqlContext, curDF, rdtyMap)
+    DataProcessing.curProcessing(sc, sqlContext, curDF, rdtyMap)
 
     // Processing Power Factor data
-//    DataProcessing.pfProcessing(sc, sqlContext, pfDF, rdtyMap)
+    DataProcessing.pfProcessing(sc, sqlContext, pfDF, rdtyMap)
 
     // Processing Accumulated Energy data
     DataProcessing.enerProcessing(sc, sqlContext, readDF, rdtyMap)
