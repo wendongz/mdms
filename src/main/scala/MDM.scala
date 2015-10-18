@@ -52,8 +52,9 @@ object MDM {
     val oraurl = "jdbc:oracle:thin:sgdm/sgdm@//192.168.5.21:1521/orcl"
     //val pgurl  = "jdbc:postgresql://data1:5432/sgdm?user=wendong&password=wendong"
     val pgurl  = "jdbc:postgresql://192.168.5.2:5433/sgdm_for_etl?user=wendong&password=wendong"
-    val pgmrdprob = "data_quality.mrdprob3"
     val pgdti = "datetimeinterval"
+    val pgmrdprob = "data_quality.mrdprob3"
+    val pgvoltoutsum = "data_quality.voltoutsum"
 
     val sparkConf = new SparkConf().setAppName("MDM")
     val sc = new SparkContext(sparkConf)
@@ -98,7 +99,7 @@ object MDM {
     val vDF = DataProcessing.voltProcessing(sc, sqlContext, voltDF, rdtyMap)
 
     // Processing Active and Reactive Power data
-    DataProcessing.powerProcessing(sc, sqlContext, powerDF, rdtyMap)
+    val pwrDF = DataProcessing.powerProcessing(sc, sqlContext, powerDF, rdtyMap)
 
     // Processing Current data
     DataProcessing.curProcessing(sc, sqlContext, curDF, rdtyMap)
@@ -111,6 +112,17 @@ object MDM {
 
     // Populate additional SGDM tables in PostgreSQL (identifiedobject, enddevice, meter, etc.)
     DataProcessing.popSgdmTables(sc, sqlContext, vDF)
+
+    // Convert Voltage Phase A,B,C rows into Column Phase_A, Phase_B, Phase_C
+    val vfDF = DataProcessing.convPhaseRow2Col(sqlContext, vDF).sort("ID", "DTI")
+
+    // Compute statistics
+    val vfsumDF = DataProcessing.voltQuality(sc, sqlContext, vfDF).sort("ID", "TS")
+
+    vfsumDF.write.mode("append").jdbc(pgurl, pgvoltoutsum, new java.util.Properties)
+
+    // Compute PQ/PV curves
+    DataProcessing.PQVcurves(sc, sqlContext, vfDF, pwrDF)
 
   }
 }

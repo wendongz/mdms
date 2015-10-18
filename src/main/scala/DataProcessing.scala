@@ -59,6 +59,8 @@ object DataProcessing {
   val pgenddevice = "enddevice"
   val pgido = "identifiedobject"
   val pgmeter = "meter"
+  val pgpvcurve = "data_quality.pvcurve"
+  val pgqvcurve = "data_quality.qvcurve"
 
   // UDF applied to DataFrame columns
   val toIntg = udf((d: java.math.BigDecimal) => d.toString.toInt)
@@ -139,7 +141,7 @@ object DataProcessing {
     val vDF = convCol2RowV(sqlContext, voltDF).sort("ID", "DTI", "PHASE_FLAG").cache()
 
     // Convert Phase A,B,C rows into Column Phase_A, Phase_B, Phase_C
-    //val vfDF = convPhaseRow2Col(sqlContext, vDF).sort("ID", "DATA_DATE", "TIMEIDX")
+    //val vfDF = convPhaseRow2Col(sqlContext, vDF).sort("ID", "DTI")
 
     // Select low voltage data
     val voltLow4DF = vDF.filter(s"VOLT < $voltLow4 and VOLT > $voltLow3") 
@@ -199,9 +201,6 @@ object DataProcessing {
 
     val voltSummary: MultivariateStatisticalSummary = Statistics.colStats(voltData)
 
-    // Populate Basereading table for Voltage data
-    popBasereading(sqlContext, vDF, "V", rdtyMap)
- 
     // Fill null values with some statistical values or defaults
     //val voltnDF = voltDF.na.fill(voltDefault)
 
@@ -218,6 +217,9 @@ object DataProcessing {
 
     vDF.write.mode("append").jdbc(pgurl, pgtestv, new java.util.Properties)
 
+    // Populate Basereading table for Voltage data
+    popBasereading(sqlContext, vDF, "V", rdtyMap)
+ 
     //val lowVolDF = mrdsm.filter("code = 'V' and value > 190 and value < 201").withColumn("prbcode", toVolLow(mrdsm("idodesc")))
     //val highVolDF = mrdsm.filter("code = 'V' and value > 278.8 and value < 279").withColumn("prbcode", toVolHigh(mrdsm("idodesc")))
     //val missingVolDF = mrdsm.filter("code = 'V' and value < 0.1").withColumn("prbcode", toVolMissing(mrdsm("idodesc")))
@@ -354,13 +356,13 @@ object DataProcessing {
 
     vDF.registerTempTable("VDF")
 
-    sqlContext.sql("""SELECT ID, DATA_DATE, TIMEIDX, max(PHASEA) as VOLT_A, max(PHASEB) as VOLT_B, max(PHASEC) as VOLT_C 
-                    FROM (select ID, DATA_DATE, TIMEIDX, 
+    sqlContext.sql("""SELECT ID, TS, DTI, max(PHASEA) as VOLT_A, max(PHASEB) as VOLT_B, max(PHASEC) as VOLT_C 
+                    FROM (select ID, TS, DTI, 
                                  CASE WHEN PHASE_FLAG = 1 THEN VOLT  END PHASEA, 
                                  CASE WHEN PHASE_FLAG = 2 THEN VOLT  END PHASEB, 
                                  CASE WHEN PHASE_FLAG = 3 THEN VOLT  END PHASEC 
                           from VDF) vdf 
-                    GROUP BY ID, DATA_DATE, TIMEIDX""")
+                    GROUP BY ID, TS, DTI""")
 
   }
 
@@ -656,7 +658,7 @@ object DataProcessing {
    *      -find outgage data
    *      -populate basereading table
    */
-  def powerProcessing(sc: SparkContext, sqlContext: SQLContext, powerDF: DataFrame, rdtyMap: scala.collection.mutable.Map[String, Long]) {
+  def powerProcessing(sc: SparkContext, sqlContext: SQLContext, powerDF: DataFrame, rdtyMap: scala.collection.mutable.Map[String, Long]): DataFrame =  {
    
     // Convert Active Power 96 columns to rows
     //val apDF = convCol2RowP(powerDF).sort("ID", "DATA_DATE", "TIMEIDX")
@@ -670,6 +672,7 @@ object DataProcessing {
     // Populate basereading table for active & reactive power data
     popBasereading(sqlContext, pwrDF, "P", rdtyMap)
 
+    pwrDF
   }
 
   /**
@@ -1249,6 +1252,56 @@ object DataProcessing {
     metertblDF.write.mode("append").jdbc(pgurl, pgmeter, new java.util.Properties)
   }
 
+
+  /**
+   * Collect Voltage outage information
+   *
+   */
+  def outageInfo(sc: SparkContext, sqlContext: SQLContext, vDF: DataFrame) = {
+
+  }
+
+  /**
+   * Compute Power Quality statistics/summary info
+   *
+   */
+  def voltQuality(sc: SparkContext, sqlContext: SQLContext, vfDF: DataFrame) = {
+
+    vfDF.filter("VOLT_A = 0 and VOLT_B = 0 and VOLT_C = 0").registerTempTable("VoltOutage")
+
+    sqlContext.sql(""" WITH T AS 
+                       (SELECT *, DENSE_RANK() OVER (ORDER BY DTI) - DTI AS Grp
+                            FROM VoltOutage)
+                        SELECT id, ts, MIN(dti) AS RangeStart, MAX(dti) AS RangeEnd, 
+                               MAX(dti) - MIN(dti) + 1 as duration
+                        FROM T
+                        GROUP BY id, ts, Grp
+                        ORDER BY id, MIN(dti) """)
+  }
+
+  /**
+   * Compute PV and QV curves
+   *
+   */
+  def PQVcurves(sc: SparkContext, sqlContext: SQLContext, vfDF: DataFrame, pwrDF: DataFrame) = {
+
+    import sqlContext.implicits._
+
+    // Get active/reactive power data
+    val apDF = pwrDF.filter("DATA_TYPE = 1")
+    val rpDF = pwrDF.filter("DATA_TYPE = 5")
+
+    // Generate PV curve data
+    val pvDF = vfDF.as('volt).join(apDF.as('ap), vfDF("ID") === apDF("ID") && vfDF("DTI") === apDF("DTI"), "inner").select($"volt.ID", $"volt.TS", $"volt.DTI", $"volt.VOLT_A", $"volt.VOLT_B", $"volt.VOLT_C", $"ap.POWER") 
+
+    // Generate QV curve data
+    val qvDF = vfDF.as('volt).join(rpDF.as('rp), vfDF("ID") === rpDF("ID") && vfDF("DTI") === rpDF("DTI"), "inner").select($"volt.ID", $"volt.TS", $"volt.DTI", $"volt.VOLT_A", $"volt.VOLT_B", $"volt.VOLT_C", $"rp.POWER") 
+
+    // Write to database
+    pvDF.select("ID", "TS", "VOLT_C", "POWER").na.drop().write.jdbc(pgurl, pgpvcurve, new java.util.Properties)
+    qvDF.select("ID", "TS", "VOLT_C", "POWER").na.drop().write.jdbc(pgurl, pgqvcurve, new java.util.Properties)
+
+  }
 
 }
 
