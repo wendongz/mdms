@@ -50,6 +50,10 @@ object MLfuncs {
     clusters.computeCost(parsedData)
   }
 
+  /**
+   * k-Means clustering 
+   *
+   */
   def kmclust(sc: SparkContext, powerDF: DataFrame, numClusters: Integer, numIter: Integer) {
    
     val numClusters = 10 
