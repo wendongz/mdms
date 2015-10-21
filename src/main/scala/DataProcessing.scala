@@ -12,6 +12,7 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types._
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Calendar
 import java.sql.Timestamp
 import java.math._
 
@@ -125,6 +126,75 @@ object DataProcessing {
   // Convert Timestamp column to Datetimeinterval column -- 
   // Note: it's a bit slow using dtiMap
   val conv2DTI = udf((ts: Timestamp) => dtiMap(ts)) 
+
+  // Convert Timestamp column to Seasonal DayTypes Index (SDTI)
+  // DAY_OF_WEEK:  1,2,3,4,5,6,7 => SUNDAY, MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, and SATURDAY
+  // MONTH:        0,1,2,..., 11 => Jan, Feb, Mar, ..., Dec
+  // Holidays: to be added
+
+  def conv2SDTI(ts: Timestamp) = {
+      val cal = Calendar.getInstance()
+      cal.setTime(ts)
+      val mon = cal.get(Calendar.MONTH)
+      val day = cal.get(Calendar.DAY_OF_WEEK)
+      var sdti = 0
+      var season = 0
+      var daytype = 0
+
+      // Check Holidays first, then other types
+      //
+
+      if (mon == 2 || mon == 3 || mon == 4) {                 // Spring
+        if (day == 2 || day == 3 || day == 4 || day == 5 || day == 6) {// Weekday
+          sdti = 1; season = 1; daytype = 1
+        }
+        else if (day == 1 || day == 7) { // Weekend
+          sdti = 2; season = 1; daytype = 2;
+        }
+        else 
+          sdti = -1 // day not recognized
+      }
+      else if (mon == 5 || mon == 6 || mon == 7 || mon == 8) { // Summer
+        if (day == 2 || day == 3 || day == 4 || day == 5 || day == 6) {// Weekday
+          sdti = 4; season = 2; daytype = 1
+        }
+        else if (day == 1 || day == 7) { // Weekend
+          sdti = 5; season = 2; daytype = 2;
+        }
+        else
+          sdti = -2
+      }
+      else if (mon == 9 || mon == 10)  {                       // Fall
+        if  (day == 2 || day == 3 || day == 4 || day == 5 || day == 6) {// Weekday
+          sdti = 7; season = 3; daytype = 1
+        }
+        else if (day == 1 || day == 7) { // Weekend
+          sdti = 8; season = 3; daytype = 2;
+        }
+        else
+          sdti = -3
+      }
+      else if (mon == 12 || mon == 1)  {                       // Winter
+        if  (day == 2 || day == 3 || day == 4 || day == 5 || day == 6) { // Weekday
+          sdti = 10; season = 4; daytype = 1
+        }
+        else if (day == 1 || day == 7) { // Weekend
+          sdti = 11; season = 4; daytype = 2;
+        }
+        else
+          sdti = -4
+      }
+      else { 
+        sdti = -9 // Month not recognized
+      }
+
+      (sdti, season, daytype)
+  }
+
+  // Create UDF using function conv2SDTI
+  val  toSDTI = udf(conv2SDTI(_: Timestamp)._1)
+  val  toSeason = udf(conv2SDTI(_: Timestamp)._2)
+  val  toDaytype = udf(conv2SDTI(_: Timestamp)._3)
 
 
   /**
@@ -453,7 +523,7 @@ object DataProcessing {
 
       val itDF = iaDF.unionAll(ibDF).unionAll(icDF)
 
-      // Write Voltage data into PostgreSQL basereading table
+      // Write Current data into PostgreSQL basereading table
       itDF.write.mode("append").jdbc(pgurl, pgbasereading, new java.util.Properties)
 
     }
@@ -481,7 +551,7 @@ object DataProcessing {
 
       val pftDF = pfDF.unionAll(pfaDF).unionAll(pfbDF).unionAll(pfcDF)
 
-      // Write Voltage data into PostgreSQL basereading table
+      // Write Power Factor data into PostgreSQL basereading table
       pftDF.write.mode("append").jdbc(pgurl, pgbasereading, new java.util.Properties)
 
     }
@@ -1294,14 +1364,36 @@ object DataProcessing {
     // Generate PV curve data
     val pvDF = vfDF.as('volt).join(apDF.as('ap), vfDF("ID") === apDF("ID") && vfDF("DTI") === apDF("DTI"), "inner").select($"volt.ID", $"volt.TS", $"volt.DTI", $"volt.VOLT_A", $"volt.VOLT_B", $"volt.VOLT_C", $"ap.POWER") 
 
+    // Add a column of Seasonal Daytypes Index
+    val pvsdDF = pvDF.withColumn("SDTI", toSDTI(pvDF("TS"))).withColumn("Season", toSeason(pvDF("TS"))).withColumn("Daytype", toDaytype(pvDF("TS")))
+
     // Generate QV curve data
     val qvDF = vfDF.as('volt).join(rpDF.as('rp), vfDF("ID") === rpDF("ID") && vfDF("DTI") === rpDF("DTI"), "inner").select($"volt.ID", $"volt.TS", $"volt.DTI", $"volt.VOLT_A", $"volt.VOLT_B", $"volt.VOLT_C", $"rp.POWER") 
 
+    // Add a column of Seasonal Daytypes Index
+    val qvsdDF = qvDF.withColumn("SDTI", toSDTI(pvDF("TS"))).withColumn("Season", toSeason(pvDF("TS"))).withColumn("Daytype", toDaytype(pvDF("TS")))
+
     // Write to database
-    pvDF.select("ID", "TS", "VOLT_C", "POWER").na.drop().write.jdbc(pgurl, pgpvcurve, new java.util.Properties)
-    qvDF.select("ID", "TS", "VOLT_C", "POWER").na.drop().write.jdbc(pgurl, pgqvcurve, new java.util.Properties)
+    pvsdDF.select("ID", "TS", "VOLT_C", "POWER", "DTI", "SDTI", "Season", "Daytype").na.drop().write.mode("append").jdbc(pgurl, pgpvcurve, new java.util.Properties)
+    qvsdDF.select("ID", "TS", "VOLT_C", "POWER", "DTI", "SDTI", "Season", "Daytype").na.drop().write.mode("append").jdbc(pgurl, pgqvcurve, new java.util.Properties)
 
   }
+
+  /**
+   *
+   *
+   */
+  def timePatterns( ) = {
+    
+    val seasons = Array("Spring", "Summer", "Fall", "Winter")
+    val dayTypes = Array("Weekday", "Weekend", "Holiday")
+    val seasonDayTypes = Array("Spring-Weekday", "Spring-Weekend", "Sprint-Holiday", "Summer-Weekday", "Summer-Weekend", "Summer-Holiday", 
+                               "Fall-Weekday", "Fall-Weekend", "Fall-Holiday", "Winter-Weekday", "Winter-Weekend", "Winter-Holiday")  
+
+     
+ 
+  }
+
 
 }
 
