@@ -66,7 +66,7 @@ object MLfuncs {
 
     println("Now evaluating different k...... ")
 
-    (60 to 250 by 10).map(k => (k, clusteringCost(parsedData, k))).foreach(println)
+    //(60 to 250 by 10).map(k => (k, clusteringCost(parsedData, k))).foreach(println)
 
     //clusters.save(sc, "/home/admin/apps/MDM/src/test/resources/Ptest-10-clusters")
 

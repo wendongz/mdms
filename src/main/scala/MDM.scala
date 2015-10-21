@@ -85,8 +85,9 @@ object MDM {
     val phaseDF = sqlContext.load("jdbc", Map("url" -> pgurl, "dbtable" -> "phase"))
 
     // Run k-means clustering on power data
-    //MLfuncs.kmclust(sc, powerDF, 10, 30) 
+    MLfuncs.kmclust(sc, powerDF, 10, 30) 
 
+/*
      // Populate SGDM datetimeinterval table (3258 days)
     val dtiDF = DataProcessing.popDTItv(sc, sqlContext, numDays)
 
@@ -123,6 +124,7 @@ object MDM {
 
     // Compute PQ/PV curves
     DataProcessing.PQVcurves(sc, sqlContext, vfDF, pwrDF)
+*/
 
   }
 }
