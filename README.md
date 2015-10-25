@@ -1,6 +1,8 @@
 # README #
 
-This README would normally document whatever steps are necessary to get your application up and running.
+This is the Meter Data Management system implemented in Spark. It assumes basic SGDM table structures have been created, and real meter data are stored in source (Oracle) tables.
+
+You can browse source code by clicking "Source" on the left side Navigation Menu, and the src -> src/scala/main/.
 
 ### What is this repository for? ###
 
