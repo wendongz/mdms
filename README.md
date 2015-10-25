@@ -1,6 +1,6 @@
 # README #
 
-This is the Meter Data Management system implemented in Spark with Scala. It assumes basic SGDM table structures have been created, and real meter data are stored in source (Oracle) tables.
+This is the Meter Data Management system implemented in Spark with Scala. It assumes basic SGDM table structures have been created, and real meter data are stored in source (Oracle) tables. The Spark application converts data from field format into SGDM data structure, and prepares data for machine learning and visualization.
 
 You can browse source code by clicking "Source" on the left side Navigation Menu, and then src -> main/scala/.
 
