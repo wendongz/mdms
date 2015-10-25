@@ -63,7 +63,7 @@ object MDM {
     // Importing the SQL context gives access to all the SQL functions and implicit conversions.
     import sqlContext.implicits._
 
-    val appDir = "/home/admin/apps/MDM/"
+    val appDir = "./"
     val numDays = 3258 // from historical real meter system
 
     /*
@@ -84,10 +84,7 @@ object MDM {
     val mskDF = sqlContext.load("jdbc", Map("url" -> pgurl, "dbtable" -> "MEASUREMENTKIND"))
     val phaseDF = sqlContext.load("jdbc", Map("url" -> pgurl, "dbtable" -> "phase"))
 
-    // Run k-means clustering on power data
-    MLfuncs.kmclust(sc, powerDF, 10, 30) 
 
-/*
      // Populate SGDM datetimeinterval table (3258 days)
     val dtiDF = DataProcessing.popDTItv(sc, sqlContext, numDays)
 
@@ -123,8 +120,14 @@ object MDM {
     vfsumDF.write.mode("append").jdbc(pgurl, pgvoltoutsum, new java.util.Properties)
 
     // Compute PQ/PV curves
-    DataProcessing.PQVcurves(sc, sqlContext, vfDF, pwrDF)
-*/
+    val (pvsdDF, qvsdDF) = DataProcessing.PQVcurves(sc, sqlContext, vfDF, pwrDF, cjccDF)
+
+    // Run k-means clustering on PV data
+    val numClusters = 9
+    val numIter = 30
+
+    MLfuncs.kmclust(sc, pwrDF, pvsdDF, qvsdDF, numClusters, numIter) 
+
 
   }
 }

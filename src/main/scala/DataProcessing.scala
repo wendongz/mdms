@@ -120,7 +120,7 @@ object DataProcessing {
   }
 
   // Get Datetimeinvertal id from Date and Idx out of 96
-  // NOte: it's faster than using dtiMap
+  // Note: it's faster than using dtiMap
   val getDTI  = udf((dt: Timestamp, idx: Int) => (dt.getTime() - starttimeL)/1000/3600/24 * 96L + idx )
 
   // Convert Timestamp column to Datetimeinterval column -- 
@@ -740,7 +740,7 @@ object DataProcessing {
     val pwrDF = convCol2RowPwr(sqlContext, powerDF).sort("ID", "DTI", "DATA_TYPE").cache()
 
     // Populate basereading table for active & reactive power data
-    popBasereading(sqlContext, pwrDF, "P", rdtyMap)
+//    popBasereading(sqlContext, pwrDF, "P", rdtyMap)
 
     pwrDF
   }
@@ -1350,33 +1350,55 @@ object DataProcessing {
   }
 
   /**
-   * Compute PV and QV curves
+   * Compute PV and QV curves.
+   * Data contains load types, and seasonal day types.
    *
    */
-  def PQVcurves(sc: SparkContext, sqlContext: SQLContext, vfDF: DataFrame, pwrDF: DataFrame) = {
+  def PQVcurves(sc: SparkContext, sqlContext: SQLContext, vfDF: DataFrame, pwrDF: DataFrame, cjccDF: DataFrame) = {
 
     import sqlContext.implicits._
 
-    // Get active/reactive power data
-    val apDF = pwrDF.filter("DATA_TYPE = 1")
-    val rpDF = pwrDF.filter("DATA_TYPE = 5")
+    // Get valid active/reactive power data
+    val apDF = pwrDF.filter("DATA_TYPE = 1 and POWER is not null")
+    val rpDF = pwrDF.filter("DATA_TYPE = 5 and POWER is not null")
+
+    // Get meter id and attr code
+    val mcatDF = cjccDF.select("mped_id", "mp_attr_code").sort("mped_id")
+
+    // Join with active/reactive power DataFrame on id
+    val apcat = mcatDF.join(apDF, mcatDF("mped_id") === apDF("ID"), "inner")
+                      .select("ID", "TS", "DTI", "DATA_TYPE", "POWER", "mp_attr_code")
+
+    val rpcat = mcatDF.join(rpDF, mcatDF("mped_id") === rpDF("ID"), "inner")
+                      .select("ID", "TS", "DTI", "DATA_TYPE", "POWER", "mp_attr_code")
 
     // Generate PV curve data
-    val pvDF = vfDF.as('volt).join(apDF.as('ap), vfDF("ID") === apDF("ID") && vfDF("DTI") === apDF("DTI"), "inner").select($"volt.ID", $"volt.TS", $"volt.DTI", $"volt.VOLT_A", $"volt.VOLT_B", $"volt.VOLT_C", $"ap.POWER") 
+    val pvDF = vfDF.as('volt).join(apcat.as('ap), vfDF("ID") === apcat("ID") && vfDF("DTI") === apcat("DTI"), "inner")
+                   .select($"volt.ID", $"volt.TS", $"volt.DTI", $"volt.VOLT_A", $"volt.VOLT_B", $"volt.VOLT_C", $"ap.POWER", $"ap.mp_attr_code" as 'loadtype) 
 
     // Add a column of Seasonal Daytypes Index
-    val pvsdDF = pvDF.withColumn("SDTI", toSDTI(pvDF("TS"))).withColumn("Season", toSeason(pvDF("TS"))).withColumn("Daytype", toDaytype(pvDF("TS")))
+    val pvsdDF = pvDF.withColumn("SDTI", toSDTI(pvDF("TS")))
+                     .withColumn("Season", toSeason(pvDF("TS")))
+                     .withColumn("Daytype", toDaytype(pvDF("TS")))
+                     .select("ID", "TS", "VOLT_C", "POWER", "DTI", "loadtype", "SDTI", "Season", "Daytype")
+                     .sort("ID", "DTI").cache()
 
     // Generate QV curve data
-    val qvDF = vfDF.as('volt).join(rpDF.as('rp), vfDF("ID") === rpDF("ID") && vfDF("DTI") === rpDF("DTI"), "inner").select($"volt.ID", $"volt.TS", $"volt.DTI", $"volt.VOLT_A", $"volt.VOLT_B", $"volt.VOLT_C", $"rp.POWER") 
+    val qvDF = vfDF.as('volt).join(rpcat.as('rp), vfDF("ID") === rpcat("ID") && vfDF("DTI") === rpcat("DTI"), "inner")
+                   .select($"volt.ID", $"volt.TS", $"volt.DTI", $"volt.VOLT_A", $"volt.VOLT_B", $"volt.VOLT_C", $"rp.POWER", $"rp.mp_attr_code" as 'loadtype) 
 
     // Add a column of Seasonal Daytypes Index
-    val qvsdDF = qvDF.withColumn("SDTI", toSDTI(pvDF("TS"))).withColumn("Season", toSeason(pvDF("TS"))).withColumn("Daytype", toDaytype(pvDF("TS")))
+    val qvsdDF = qvDF.withColumn("SDTI", toSDTI(pvDF("TS")))
+                     .withColumn("Season", toSeason(pvDF("TS")))
+                     .withColumn("Daytype", toDaytype(pvDF("TS")))
+                     .select("ID", "TS", "VOLT_C", "POWER", "DTI", "loadtype", "SDTI", "Season", "Daytype")
+                     .sort("ID", "DTI").cache()
 
     // Write to database
-    pvsdDF.select("ID", "TS", "VOLT_C", "POWER", "DTI", "SDTI", "Season", "Daytype").na.drop().write.mode("append").jdbc(pgurl, pgpvcurve, new java.util.Properties)
-    qvsdDF.select("ID", "TS", "VOLT_C", "POWER", "DTI", "SDTI", "Season", "Daytype").na.drop().write.mode("append").jdbc(pgurl, pgqvcurve, new java.util.Properties)
+    pvsdDF.write.mode("append").jdbc(pgurl, pgpvcurve, new java.util.Properties)
+    qvsdDF.write.mode("append").jdbc(pgurl, pgqvcurve, new java.util.Properties)
 
+    (pvsdDF, qvsdDF)
   }
 
   /**
