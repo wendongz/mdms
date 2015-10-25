@@ -740,7 +740,7 @@ object DataProcessing {
     val pwrDF = convCol2RowPwr(sqlContext, powerDF).sort("ID", "DTI", "DATA_TYPE").cache()
 
     // Populate basereading table for active & reactive power data
-//    popBasereading(sqlContext, pwrDF, "P", rdtyMap)
+    popBasereading(sqlContext, pwrDF, "P", rdtyMap)
 
     pwrDF
   }
