@@ -24,6 +24,9 @@ import org.apache.spark.sql._
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.DataFrame
 
+import java.io.File
+import com.typesafe.config.{Config, ConfigFactory}
+
 import com.databricks.spark.csv
 import com.databricks.spark.csv._
 
@@ -47,12 +50,32 @@ import mdmutil._
  */
 
 object MDM {
+
+  /*
+   * Read configuration parameters
+   */
+  val mdmHome = scala.util.Properties.envOrElse("MDM_HOME", "MDM/")
+  val config = ConfigFactory.parseFile(new File(mdmHome + "src/main/resources/application.conf"))
+  val runmode = config.getInt("mdms.runmode")
+  val srcurl = config.getString("mdms.srcurl")
+  val tgturl = config.getString("mdms.tgturl")
+
+  val pgdti = config.getString("mdms.pgdti")
+ 
+  val numClusters = config.getInt("mdms.numClusters")
+  val numIters = config.getInt("mdms.numIters")
+  val numRuns = config.getInt("mdms.numRuns")
+
+
+  /**
+   *  Main program of MDMS
+   *
+   */
   def main(args: Array[String]) {
 
-    val oraurl = "jdbc:oracle:thin:sgdm/sgdm@//192.168.5.21:1521/orcl"
-    //val pgurl  = "jdbc:postgresql://data1:5432/sgdm?user=wendong&password=wendong"
-    val pgurl  = "jdbc:postgresql://192.168.5.2:5433/sgdm_for_etl?user=wendong&password=wendong"
-    val pgdti = "datetimeinterval"
+    //val srcurl = "jdbc:oracle:thin:sgdm/sgdm@//192.168.5.21:1521/orcl"
+    //val tgturl  = "jdbc:postgresql://192.168.5.2:5433/sgdm_for_etl?user=wendong&password=wendong"
+    //val pgdti = "datetimeinterval"
     val pgmrdprob = "data_quality.mrdprob3"
     val pgvoltoutsum = "data_quality.voltoutsum"
 
@@ -63,7 +86,6 @@ object MDM {
     // Importing the SQL context gives access to all the SQL functions and implicit conversions.
     import sqlContext.implicits._
 
-    val appDir = "./"
     val numDays = 3258 // from historical real meter system
 
     /*
@@ -72,23 +94,24 @@ object MDM {
     // .............
     
     // Load Meter Data from MDMS Oracle database tables into Spark DataFrame
-    val powerDF = sqlContext.load("jdbc", Map("url" -> oraurl, "dbtable" -> "YZ_E_MP_POWER_CURVE"))
-    val voltDF  = sqlContext.load("jdbc", Map("url" -> oraurl, "dbtable" -> "YZ_E_MP_VOL_CURVE"))
-    val curDF   = sqlContext.load("jdbc", Map("url" -> oraurl, "dbtable" -> "YZ_E_MP_CUR_CURVE"))
-    val pfDF    = sqlContext.load("jdbc", Map("url" -> oraurl, "dbtable" -> "YZ_E_MP_FACTOR_CURVE"))
-    val readDF  = sqlContext.load("jdbc", Map("url" -> oraurl, "dbtable" -> "YZ_E_MP_READ_CURVE"))
-    val cjccDF  = sqlContext.load("jdbc", Map("url" -> oraurl, "dbtable" -> "YZ_V_CJ_CC"))
+    val powerDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "YZ_E_MP_POWER_CURVE"))
+    val voltDF  = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "YZ_E_MP_VOL_CURVE"))
+    val curDF   = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "YZ_E_MP_CUR_CURVE"))
+    val pfDF    = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "YZ_E_MP_FACTOR_CURVE"))
+    val readDF  = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "YZ_E_MP_READ_CURVE"))
+    val cjccDF  = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "YZ_V_CJ_CC"))
 
     // Load static data from SGDM PostgreSQL tables
-    val rdtyDF = sqlContext.load("jdbc", Map("url" -> pgurl, "dbtable" -> "readingtype"))
-    val mskDF = sqlContext.load("jdbc", Map("url" -> pgurl, "dbtable" -> "MEASUREMENTKIND"))
-    val phaseDF = sqlContext.load("jdbc", Map("url" -> pgurl, "dbtable" -> "phase"))
+    val rdtyDF = sqlContext.load("jdbc", Map("url" -> tgturl, "dbtable" -> "readingtype"))
+    val mskDF = sqlContext.load("jdbc", Map("url" -> tgturl, "dbtable" -> "MEASUREMENTKIND"))
+    val phaseDF = sqlContext.load("jdbc", Map("url" -> tgturl, "dbtable" -> "phase"))
 
 
-     // Populate SGDM datetimeinterval table (3258 days)
+    // Populate SGDM datetimeinterval table (3258 days)
     val dtiDF = DataProcessing.popDTItv(sc, sqlContext, numDays)
 
-    dtiDF.write.mode("append").jdbc(pgurl, pgdti, new java.util.Properties)
+    if (runmode == 2) // Populate SGDM tables
+      dtiDF.write.mode("append").jdbc(tgturl, pgdti, new java.util.Properties)
 
     // Generate DataFrame from readingtype-measurementkind-phase, and return a Map
     val rdtyMap = DataProcessing.getReadingType(sqlContext, rdtyDF, mskDF, phaseDF)
@@ -109,7 +132,8 @@ object MDM {
     DataProcessing.enerProcessing(sc, sqlContext, readDF, rdtyMap)
 
     // Populate additional SGDM tables in PostgreSQL (identifiedobject, enddevice, meter, etc.)
-    DataProcessing.popSgdmTables(sc, sqlContext, vDF)
+    if (runmode == 2) // Populate SGDM tables
+      DataProcessing.popSgdmTables(sc, sqlContext, vDF)
 
     // Convert Voltage Phase A,B,C rows into Column Phase_A, Phase_B, Phase_C
     val vfDF = DataProcessing.convPhaseRow2Col(sqlContext, vDF).sort("ID", "DTI")
@@ -117,17 +141,16 @@ object MDM {
     // Compute statistics
     val vfsumDF = DataProcessing.voltQuality(sc, sqlContext, vfDF).sort("ID", "TS")
 
-    vfsumDF.write.mode("append").jdbc(pgurl, pgvoltoutsum, new java.util.Properties)
+    if (runmode == 2)  // Populate SGDM tables
+      vfsumDF.write.mode("append").jdbc(tgturl, pgvoltoutsum, new java.util.Properties)
 
     // Compute PQ/PV curves
     val (pvsdDF, qvsdDF) = DataProcessing.PQVcurves(sc, sqlContext, vfDF, pwrDF, cjccDF)
 
     // Run k-means clustering on PV data
-    val numClusters = 9
-    val numIter = 30
+    MLfuncs.kmclust(sc, sqlContext, pwrDF, pvsdDF, qvsdDF, numClusters, numIters, numRuns) 
 
-    MLfuncs.kmclust(sc, pwrDF, pvsdDF, qvsdDF, numClusters, numIter) 
-
+    // Clustering all meter data using Loadtype, Seasonal and Daytype
 
   }
 }

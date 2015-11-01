@@ -18,7 +18,9 @@ import java.math._
 
 import scala.collection.mutable.ListBuffer
 import scala.collection.mutable.ArrayBuffer
-//import scala.collection.mutable.Map
+
+import java.io.File
+import com.typesafe.config.{Config, ConfigFactory}
 
 import org.apache.spark.mllib.clustering.{KMeans, KMeansModel}
 import org.apache.spark.mllib.linalg.{Vector, Vectors}
@@ -38,8 +40,11 @@ object DataProcessing {
    */
   val numDays = 3258
 
-  // PostgreSQL jdbc URL
-  val pgurl  = "jdbc:postgresql://192.168.5.2:5433/sgdm_for_etl?user=wendong&password=wendong"
+  // Read config parameters
+  val mdmHome = scala.util.Properties.envOrElse("MDM_HOME", "MDM/")
+  val config = ConfigFactory.parseFile(new File(mdmHome + "src/main/resources/application.conf"))
+  val runmode = config.getInt("mdms.runmode")
+  val tgturl = config.getString("mdms.tgturl")
 
   // Defined different voltage levels
   val voltLow1 = 10.0
@@ -196,7 +201,13 @@ object DataProcessing {
   val  toSeason = udf(conv2SDTI(_: Timestamp)._2)
   val  toDaytype = udf(conv2SDTI(_: Timestamp)._3)
 
-
+  // Convert loadtype string to integer type in column 
+  val toLoadtype  = udf((s: String) => s match {
+                                          case "01" => 1
+                                          case "02" => 2
+                                          case "11" => 3
+                                          case _    => 0 }) 
+  
   /**
    *  Process Voltage data 
    *      -find missing and null values;
@@ -279,16 +290,18 @@ object DataProcessing {
     //val voltLow4DF = sqlContext.createDataFrame(voltLow4RDD, schemaVolt)
 
     // Write data to PostgreSQL table
-    //voltLow4DF.write.jdbc(pgurl, pgtest, new java.util.Properties)
+    //voltLow4DF.write.jdbc(tgturl, pgtest, new java.util.Properties)
 
-    //voltLow4DF.write.jdbc(pgurl, pgtestvl, new java.util.Properties)
-    //voltHighDF.write.jdbc(pgurl, pgtestvh, new java.util.Properties)
-    //voltOutDF.write.jdbc(pgurl, pgtestvo, new java.util.Properties)
+    //voltLow4DF.write.jdbc(tgturl, pgtestvl, new java.util.Properties)
+    //voltHighDF.write.jdbc(tgturl, pgtestvh, new java.util.Properties)
+    //voltOutDF.write.jdbc(tgturl, pgtestvo, new java.util.Properties)
 
-    vDF.write.mode("append").jdbc(pgurl, pgtestv, new java.util.Properties)
+    if (runmode == 2) // Populate SGDM tables 
+      vDF.write.mode("append").jdbc(tgturl, pgtestv, new java.util.Properties)
 
     // Populate Basereading table for Voltage data
-    popBasereading(sqlContext, vDF, "V", rdtyMap)
+    if (runmode == 2) // Populate SGDM tables
+      popBasereading(sqlContext, vDF, "V", rdtyMap)
  
     //val lowVolDF = mrdsm.filter("code = 'V' and value > 190 and value < 201").withColumn("prbcode", toVolLow(mrdsm("idodesc")))
     //val highVolDF = mrdsm.filter("code = 'V' and value > 278.8 and value < 279").withColumn("prbcode", toVolHigh(mrdsm("idodesc")))
@@ -500,7 +513,7 @@ object DataProcessing {
       val vtDF = vaDF.unionAll(vbDF).unionAll(vcDF)
 
       // Write Voltage data into PostgreSQL basereading table
-      vtDF.write.mode("append").jdbc(pgurl, pgbasereading, new java.util.Properties)
+      vtDF.write.mode("append").jdbc(tgturl, pgbasereading, new java.util.Properties)
     }
     else if (codename == "A") {
       val rdtyidIA = rdtyMap("rdtyIA")
@@ -524,7 +537,7 @@ object DataProcessing {
       val itDF = iaDF.unionAll(ibDF).unionAll(icDF)
 
       // Write Current data into PostgreSQL basereading table
-      itDF.write.mode("append").jdbc(pgurl, pgbasereading, new java.util.Properties)
+      itDF.write.mode("append").jdbc(tgturl, pgbasereading, new java.util.Properties)
 
     }
     else if (codename == "PF") {
@@ -552,7 +565,7 @@ object DataProcessing {
       val pftDF = pfDF.unionAll(pfaDF).unionAll(pfbDF).unionAll(pfcDF)
 
       // Write Power Factor data into PostgreSQL basereading table
-      pftDF.write.mode("append").jdbc(pgurl, pgbasereading, new java.util.Properties)
+      pftDF.write.mode("append").jdbc(tgturl, pgbasereading, new java.util.Properties)
 
     }
     else if (codename == "P") {
@@ -619,7 +632,7 @@ object DataProcessing {
       val pqallDF = pDF.unionAll(paDF).unionAll(pbDF).unionAll(pcDF).unionAll(qDF).unionAll(qaDF).unionAll(qbDF).unionAll(qcDF)
 
       // Write Power data into PostgreSQL basereading table
-      pqallDF.write.mode("append").jdbc(pgurl, pgbasereading, new java.util.Properties)
+      pqallDF.write.mode("append").jdbc(tgturl, pgbasereading, new java.util.Properties)
 
     }
     else if (codename == "E") {
@@ -644,7 +657,7 @@ object DataProcessing {
       val epqDF = epDF.unionAll(eqDF)
 
       // Write Energy reads into PostgreSQL basereading table
-      epqDF.write.mode("append").jdbc(pgurl, pgbasereading, new java.util.Properties)
+      epqDF.write.mode("append").jdbc(tgturl, pgbasereading, new java.util.Properties)
 
     }
     else {
@@ -740,7 +753,8 @@ object DataProcessing {
     val pwrDF = convCol2RowPwr(sqlContext, powerDF).sort("ID", "DTI", "DATA_TYPE").cache()
 
     // Populate basereading table for active & reactive power data
-    popBasereading(sqlContext, pwrDF, "P", rdtyMap)
+    if (runmode == 2) // Populate SGDM tables
+      popBasereading(sqlContext, pwrDF, "P", rdtyMap)
 
     pwrDF
   }
@@ -758,7 +772,8 @@ object DataProcessing {
     val cDF = convCol2RowCur(sqlContext, curDF) //.sort("ID", "DTI", "PHASE_FLAG")
 
     // Populate basereading table for active & reactive power data
-    popBasereading(sqlContext, cDF, "A", rdtyMap)
+    if (runmode == 2) // Populate SGDM tables
+      popBasereading(sqlContext, cDF, "A", rdtyMap)
 
   }
 
@@ -774,7 +789,8 @@ object DataProcessing {
     val pftDF = convCol2RowPF(sqlContext, pfDF) //.sort("ID", "DTI", "PHASE_FLAG")
 
     // Populate basereading table for power factor data
-    popBasereading(sqlContext, pftDF, "PF", rdtyMap)
+    if (runmode == 2) // Populate SGDM tables
+      popBasereading(sqlContext, pftDF, "PF", rdtyMap)
 
   }
 
@@ -789,7 +805,8 @@ object DataProcessing {
     val enerDF = convCol2RowE(sqlContext, readDF)
 
     // Populate basereading table for active & reactive Accumulated Energy data
-    popBasereading(sqlContext, enerDF, "E", rdtyMap)
+    if (runmode == 2) // Populate SGDM tables
+      popBasereading(sqlContext, enerDF, "E", rdtyMap)
 
   }
 
@@ -1296,7 +1313,7 @@ object DataProcessing {
     val meterIdoDF = sqlContext.createDataFrame(meterIdoRDD, schemaIDO)
 
     // Populate SGDM identifiedobject table
-    meterIdoDF.write.mode("append").jdbc(pgurl, pgido, new java.util.Properties)
+    meterIdoDF.write.mode("append").jdbc(tgturl, pgido, new java.util.Properties)
 
     // Create DataFrame Schema for SGDM enddevice table
     val schemaED = StructType(List(StructField("enddeviceid", LongType), StructField("ispan", BooleanType), StructField("isvirtual", BooleanType),
@@ -1309,7 +1326,7 @@ object DataProcessing {
     val edDF = sqlContext.createDataFrame(edRDD, schemaED)
 
     // Populate SGDM enddevice table
-    edDF.write.mode("append").jdbc(pgurl, pgenddevice, new java.util.Properties)
+    edDF.write.mode("append").jdbc(tgturl, pgenddevice, new java.util.Properties)
 
     // Create DataFrame Schema for SGDM meter table
     val schemaMeter = StructType(List(StructField("meterid", LongType), StructField("formnumber", StringType), StructField("description", StringType))) 
@@ -1319,7 +1336,7 @@ object DataProcessing {
     val metertblDF = sqlContext.createDataFrame(metertblRDD, schemaMeter)
 
     // Populate SGDM meter table
-    metertblDF.write.mode("append").jdbc(pgurl, pgmeter, new java.util.Properties)
+    metertblDF.write.mode("append").jdbc(tgturl, pgmeter, new java.util.Properties)
   }
 
 
@@ -1352,7 +1369,14 @@ object DataProcessing {
   /**
    * Compute PV and QV curves.
    * Data contains load types, and seasonal day types.
-   *
+   * - Input: 
+   *          sc: SparkContext
+   *          sqlContext: SQLContext
+   *          vfDF: DataFrame - voltage data
+   *          pwrDF: DataFrame - power data
+   *          cjccDF: DataFrame - item description data from CJ_CC table
+   * - Return: 
+   *          Tuple-2 of pv and qv curve data
    */
   def PQVcurves(sc: SparkContext, sqlContext: SQLContext, vfDF: DataFrame, pwrDF: DataFrame, cjccDF: DataFrame) = {
 
@@ -1362,41 +1386,42 @@ object DataProcessing {
     val apDF = pwrDF.filter("DATA_TYPE = 1 and POWER is not null")
     val rpDF = pwrDF.filter("DATA_TYPE = 5 and POWER is not null")
 
-    // Get meter id and attr code
-    val mcatDF = cjccDF.select("mped_id", "mp_attr_code").sort("mped_id")
+    // Get meter id and attr code; then add a column to convert mp_attr_code into Loadtype
+    val mcatDF = cjccDF.withColumn("Loadtype", toLoadtype(cjccDF("mp_attr_code")))
+                       .select("mped_id", "Loadtype").sort("mped_id")
 
     // Join with active/reactive power DataFrame on id
     val apcat = mcatDF.join(apDF, mcatDF("mped_id") === apDF("ID"), "inner")
-                      .select("ID", "TS", "DTI", "DATA_TYPE", "POWER", "mp_attr_code")
+                      .select("ID", "TS", "DTI", "DATA_TYPE", "POWER", "Loadtype")
 
     val rpcat = mcatDF.join(rpDF, mcatDF("mped_id") === rpDF("ID"), "inner")
-                      .select("ID", "TS", "DTI", "DATA_TYPE", "POWER", "mp_attr_code")
+                      .select("ID", "TS", "DTI", "DATA_TYPE", "POWER", "Loadtype")
 
     // Generate PV curve data
     val pvDF = vfDF.as('volt).join(apcat.as('ap), vfDF("ID") === apcat("ID") && vfDF("DTI") === apcat("DTI"), "inner")
-                   .select($"volt.ID", $"volt.TS", $"volt.DTI", $"volt.VOLT_A", $"volt.VOLT_B", $"volt.VOLT_C", $"ap.POWER", $"ap.mp_attr_code" as 'loadtype) 
+                   .select($"volt.ID", $"volt.TS", $"volt.DTI", $"volt.VOLT_A", $"volt.VOLT_B", $"volt.VOLT_C", $"ap.POWER", $"ap.Loadtype") 
 
     // Add a column of Seasonal Daytypes Index
     val pvsdDF = pvDF.withColumn("SDTI", toSDTI(pvDF("TS")))
                      .withColumn("Season", toSeason(pvDF("TS")))
                      .withColumn("Daytype", toDaytype(pvDF("TS")))
-                     .select("ID", "TS", "VOLT_C", "POWER", "DTI", "loadtype", "SDTI", "Season", "Daytype")
+                     .select("ID", "TS", "VOLT_C", "POWER", "DTI", "Loadtype", "SDTI", "Season", "Daytype")
                      .sort("ID", "DTI").cache()
 
     // Generate QV curve data
     val qvDF = vfDF.as('volt).join(rpcat.as('rp), vfDF("ID") === rpcat("ID") && vfDF("DTI") === rpcat("DTI"), "inner")
-                   .select($"volt.ID", $"volt.TS", $"volt.DTI", $"volt.VOLT_A", $"volt.VOLT_B", $"volt.VOLT_C", $"rp.POWER", $"rp.mp_attr_code" as 'loadtype) 
+                   .select($"volt.ID", $"volt.TS", $"volt.DTI", $"volt.VOLT_A", $"volt.VOLT_B", $"volt.VOLT_C", $"rp.POWER", $"rp.Loadtype") 
 
     // Add a column of Seasonal Daytypes Index
     val qvsdDF = qvDF.withColumn("SDTI", toSDTI(pvDF("TS")))
                      .withColumn("Season", toSeason(pvDF("TS")))
                      .withColumn("Daytype", toDaytype(pvDF("TS")))
-                     .select("ID", "TS", "VOLT_C", "POWER", "DTI", "loadtype", "SDTI", "Season", "Daytype")
+                     .select("ID", "TS", "VOLT_C", "POWER", "DTI", "Loadtype", "SDTI", "Season", "Daytype")
                      .sort("ID", "DTI").cache()
 
     // Write to database
-    pvsdDF.write.mode("append").jdbc(pgurl, pgpvcurve, new java.util.Properties)
-    qvsdDF.write.mode("append").jdbc(pgurl, pgqvcurve, new java.util.Properties)
+    pvsdDF.write.mode("append").jdbc(tgturl, pgpvcurve, new java.util.Properties)
+    qvsdDF.write.mode("append").jdbc(tgturl, pgqvcurve, new java.util.Properties)
 
     (pvsdDF, qvsdDF)
   }
@@ -1405,15 +1430,28 @@ object DataProcessing {
    *
    *
    */
-  def timePatterns( ) = {
+  def loadTimePatterns( ) = {
     
     val seasons = Array("Spring", "Summer", "Fall", "Winter")
+
     val dayTypes = Array("Weekday", "Weekend", "Holiday")
+
     val seasonDayTypes = Array("Spring-Weekday", "Spring-Weekend", "Sprint-Holiday", "Summer-Weekday", "Summer-Weekend", "Summer-Holiday", 
                                "Fall-Weekday", "Fall-Weekend", "Fall-Holiday", "Winter-Weekday", "Winter-Weekend", "Winter-Holiday")  
 
-     
- 
+    val loadTypeSeasonDayTypes = Array("Industrial-Spring-Weekday", "Industrial-Spring-Weekend", "Industrial-Spring-Holiday",
+                                       "Industrial-Summer-Weekday", "Industrial-Summer-Weekend", "Industrial-Summer-Holiday",
+                                       "Industrial-Fall-Weekday",   "Industrial-Fall-Weekend",   "Industrial-Fall-Holiday",
+                                       "Industrial-Winter-Weekday", "Industrial-Winter-Weekend", "Industrial-Winter-Holiday",
+                                       "Commercial-Spring-Weekday", "Commercial-Spring-Weekend", "Commercial-Spring-Holiday",
+                                       "Commercial-Summer-Weekday", "Commercial-Summer-Weekend", "Commercial-Summer-Holiday",
+                                       "Commercial-Fall-Weekday",   "Commercial-Fall-Weekend",   "Commercial-Fall-Holiday",
+                                       "Commercial-Winter-Weekday", "Commercial-Winter-Weekend", "Commercial-Winter-Holiday",
+                                       "Residential-Spring-Weekday", "Residential-Spring-Weekend", "Residential-Spring-Holiday",
+                                       "Residential-Summer-Weekday", "Residential-Summer-Weekend", "Residential-Summer-Holiday",
+                                       "Residential-Fall-Weekday",   "Residential-Fall-Weekend",   "Residential-Fall-Holiday",
+                                       "Residential-Winter-Weekday", "Residential-Winter-Weekend", "Residential-Winter-Holiday")  
+
   }
 
 
