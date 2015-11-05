@@ -56,10 +56,10 @@ object DataProcessing {
   val voltDefault = 220.0
 
   // table to write
-  val pgtestv = "data_quality.volt"
-  val pgtestvl = "data_quality.voltagelow"
-  val pgtestvh = "data_quality.voltagehigh"
-  val pgtestvo = "data_quality.voltageout"
+  val pgdqVolt = "data_quality.volt"
+  val pgdqVl = "data_quality.voltagelow"
+  val pgdqVh = "data_quality.voltagehigh"
+  val pgdqVo = "data_quality.voltageout"
   val pgtestvop = "data_quality.voltageout_phc"
   val pgbasereading = "basereading"
   val pgenddevice = "enddevice"
@@ -179,7 +179,7 @@ object DataProcessing {
         else
           sdti = -3
       }
-      else if (mon == 12 || mon == 1)  {                       // Winter
+      else if (mon == 11 || mon == 0 || mon == 1)  {                       // Winter
         if  (day == 2 || day == 3 || day == 4 || day == 5 || day == 6) { // Weekday
           sdti = 10; season = 4; daytype = 1
         }
@@ -240,8 +240,6 @@ object DataProcessing {
     // drop null values
     val voltdnDF = voltDF.na.drop()
  
-    val N = voltdnDF.count * 96
-
     // Calculate voltSummary statistics
     val vData = voltdnDF.select("U1","U2","U3","U4","U5","U6","U7","U8","U9","U10","U11","U12","U13","U14","U15","U16","U17","U18",
                               "U19","U20","U21","U22","U23","U24","U25","U26","U27","U28","U29","U30","U31","U32","U33","U34","U35",
@@ -285,19 +283,15 @@ object DataProcessing {
     // Fill null values with some statistical values or defaults
     //val voltnDF = voltDF.na.fill(voltDefault)
 
-    // Convert RDD to DataFrame
-    //val vtDF = sqlContext.createDataFrame(voltLow4RDD, schemaVolt)
-    //val voltLow4DF = sqlContext.createDataFrame(voltLow4RDD, schemaVolt)
-
-    // Write data to PostgreSQL table
-    //voltLow4DF.write.jdbc(tgturl, pgtest, new java.util.Properties)
-
-    //voltLow4DF.write.jdbc(tgturl, pgtestvl, new java.util.Properties)
-    //voltHighDF.write.jdbc(tgturl, pgtestvh, new java.util.Properties)
-    //voltOutDF.write.jdbc(tgturl, pgtestvo, new java.util.Properties)
+    // Write data to data quality tables
+    if (runmode == 3) {
+      voltLow4DF.write.jdbc(tgturl, pgdqVl, new java.util.Properties)
+      voltHighDF.write.jdbc(tgturl, pgdqVh, new java.util.Properties)
+      voltOutDF.write.jdbc(tgturl, pgdqVo, new java.util.Properties)
+    }
 
     if (runmode == 2) // Populate SGDM tables 
-      vDF.write.mode("append").jdbc(tgturl, pgtestv, new java.util.Properties)
+      vDF.write.mode("append").jdbc(tgturl, pgdqVolt, new java.util.Properties)
 
     // Populate Basereading table for Voltage data
     if (runmode == 2) // Populate SGDM tables
@@ -750,7 +744,10 @@ object DataProcessing {
     //val rpDF = convCol2RowRP(powerDF).sort("ID", "DATA_DATE", "TIMEIDX")
 
     // Convert all power data of 96 columns to rows
-    val pwrDF = convCol2RowPwr(sqlContext, powerDF).sort("ID", "DTI", "DATA_TYPE").cache()
+    // may need to filter powerDF first by data_type
+    val power2DF = powerDF.filter("DATA_TYPE=1 or DATA_TYPE=5")
+
+    val pwrDF = convCol2RowPwr(sqlContext, power2DF).cache()  
 
     // Populate basereading table for active & reactive power data
     if (runmode == 2) // Populate SGDM tables
@@ -1420,8 +1417,10 @@ object DataProcessing {
                      .sort("ID", "DTI").cache()
 
     // Write to database
-    pvsdDF.write.mode("append").jdbc(tgturl, pgpvcurve, new java.util.Properties)
-    qvsdDF.write.mode("append").jdbc(tgturl, pgqvcurve, new java.util.Properties)
+    if (runmode == 2 || runmode == 3) { // Populate SGDM or data quality and analysis related tables
+      pvsdDF.write.mode("append").jdbc(tgturl, pgpvcurve, new java.util.Properties)
+      qvsdDF.write.mode("append").jdbc(tgturl, pgqvcurve, new java.util.Properties)
+    }
 
     (pvsdDF, qvsdDF)
   }
@@ -1453,7 +1452,6 @@ object DataProcessing {
                                        "Residential-Winter-Weekday", "Residential-Winter-Weekend", "Residential-Winter-Holiday")  
 
   }
-
 
 }
 

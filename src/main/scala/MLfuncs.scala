@@ -13,12 +13,16 @@ import org.apache.spark.rdd.RDD
 
 import scala.collection.mutable.ListBuffer
 import scala.collection.mutable.ArrayBuffer
+import collection.JavaConversions._
 
 import org.apache.spark.mllib.clustering.{KMeans, KMeansModel}
 import org.apache.spark.mllib.linalg.{Vector, Vectors}
 
 import java.io.File
 import com.typesafe.config.{Config, ConfigFactory}
+
+import org.apache.commons.math3.fitting.PolynomialCurveFitter
+import org.apache.commons.math3.fitting.WeightedObservedPoints
 
 /**
  * Meter Data Management System utility and Machine Learning functions
@@ -43,6 +47,13 @@ object MLfuncs {
 
   val volt_low  = config.getDouble("mdms.volt_low")
   val volt_high = config.getDouble("mdms.volt_high")
+
+  val interactiveMeter = config.getString("mdms.interactive_meter")
+  val meterIDs = config.getLongList("mdms.meterids.ids")
+  
+  // Output table names
+  val pgHourGroup = "data_quality.hourgroup" 
+  val pgPVHG = "data_quality.pvhg"
 
   /**
    * Parsing category information (Commercial, Industrial, Residential)
@@ -125,11 +136,11 @@ object MLfuncs {
    *   - Return: 
    *            RDD of Feature Vector containing PV information: RDD[Vector]
    */
-  def get24HoursPVF(sc: SparkContext, pvsdDF: DataFrame, loadtype: Int, season: Int, daytype: Int) = {
+  def get24HoursPVF(sc: SparkContext, pvsdDF: DataFrame, id: Long, season: Int, daytype: Int) = {
 
     // Drop null values and abnornal voltage data from  PV curve data; also filter loadtype and seasonal daytype
     val pvsd2DF = pvsdDF.na.drop()
-                        .filter(s"VOLT_C <= $volt_high and VOLT_C >= $volt_low and Loadtype = $loadtype and Season = $season and Daytype = $daytype")
+                        .filter(s"ID = $id and VOLT_C <= $volt_high and VOLT_C >= $volt_low and Season = $season and Daytype = $daytype")
                         .cache()
 
     if (!pvsd2DF.rdd.isEmpty) { // Not Empty RDD
@@ -371,62 +382,45 @@ object MLfuncs {
     // Array of Row for Hour Group data
     val arrHGRow = new ArrayBuffer[Row]()
 
-/*
-    // Get parsed data of PV feature Vector and cache
-    val hrvPV = get24HoursPVF(sc, pvsdDF, 1, 1, 1).cache()
-
-    // Get each record's index also
-    val hrvPVZI = hrvPV.zipWithIndex
-
-    // Run k-means clustering Algorithm once
-    val clustersPV = kmclustAlg(hrvPV, numClusters, numIters)
-
-    // Print centers
-    for (c <- clustersPV.clusterCenters) {
-      println("  " + c.toString) 
-    }
-
-    var clusterPVPred = hrvPV.map(x => clustersPV.predict(x))
-
-    var clusterPVMap = hrvPVZI.zip(clusterPVPred)
-
-    // Get the Hourly Group and its members 
-    // in the format of (4,CompactBuffer(17, 18, 19, 22)), (5,CompactBuffer(0, 1, 2, 3, 4, 5, 6, 23)), ...
-    val pvhgmRDD = clusterPVMap.map{r => (r._2, r._1._2)}.groupByKey
-
-    // get the cluster number assigned to each point, then count the number of points in each cluster
-    // such as: Map(0 -> 5, 5 -> 8, 1 -> 2, 2 -> 2, 3 -> 3, 4 -> 4)
-    val pvcMap = clusterPVMap.map{r => r._2}.countByValue
-
-    // Evaluate different k
-    //(3 to 20).map(k => (k, clusteringCost(hrvPV, k))).foreach(println)
-*/
+    // To Evaluate different k
+    //(2 to 20).map(k => (k, clusteringCost(hrpvData, k))).foreach(println)
 
     /*
      * For each loadtypes, seasons and daytypes, run k-means clustering to get hourly groups
      */
     var clustersLSDOpt: Option[KMeansModel] = None
     var pvhgmRDDOpt: Option[RDD[(Int, Iterable[Long])]] = None
-    var numHourGroup: Int = 0
+    var numHourGroup: Int = 7
+    var ids = Array(0L)
    
-    for (lt <- 1 to numLoadtypes) {
+    // Now we get a list of meters either from config file, or all meters which will take quite long time
+    if (interactiveMeter == "true") { // get meter ids from config file
+      ids = meterIDs.toList.map(_.toString.toLong).toArray
+    }
+    else { // otherwise, get all meter ids
+      ids = pvsdDF.select("ID").distinct.rdd.map{r => r.getLong(0)}.collect
+    }
+ 
+    for (i <- 0 until ids.size) {
+      var id = ids(i)
+
       for (se <- 1 to numSeasons) {
         for (dt <- 1 to numDaytypes) {
-          // Get parsed data of PV feature Vector and cache
-          var hrpvData = get24HoursPVF(sc, pvsdDF, lt, se, dt).cache()
+          // Get parsed data of PV feature Vector and cache it
+          var hrpvData = get24HoursPVF(sc, pvsdDF, id, se, dt).cache()
 
           // Attache index to each hour's feature data
           var hrpvDataZI = hrpvData.zipWithIndex
 
           arrHrPVRDD += hrpvDataZI // may contain empty RDD
 
-          // Here we use 6/9 or 7 hourly-group to clustering 24 hours data
+          // Based on preliminary analysis, 24 hours data most likely to be grouped into 6 or 7 hourly groups 
           if (!hrpvData.isEmpty) {
 
-            if (lt == 3 && se == 1 && dt == 2) // Residential, Spring, Weekend 
-              numHourGroup = 7
-            else
-              numHourGroup = 6
+            //if (lt == 3 && se == 1 && dt == 2) // Residential, Spring, Weekend 
+            //  numHourGroup = 7
+            //else
+            //  numHourGroup = 6
  
             // Clusters info (in KMeansModel)
             var clustersLSD = kmclustAlg(hrpvData, numHourGroup, 20, numRuns)
@@ -453,7 +447,7 @@ object MLfuncs {
               var arrhi = arrHGinfo(hg)._2.toArray // hour index array
 
               for(m <- 0 until arrhi.size) {
-                arrHGRow += Row(lt, se, dt, hg, arrhi(m))
+                arrHGRow += Row(id, se, dt, hg, arrhi(m))
               }
             }
           }
@@ -462,11 +456,9 @@ object MLfuncs {
             pvhgmRDDOpt = None
           }
 
-          //arrKMM += clustersLSDOpt
           arrKMMOpt += clustersLSDOpt
 
-          //arrHG += pvhgmRDD
-          arrHGOpt += pvhgmRDDOpt
+          arrHGOpt  += pvhgmRDDOpt
 
         }
       }
@@ -474,13 +466,13 @@ object MLfuncs {
 
     val hgRowRDD = sc.parallelize(arrHGRow) 
 
-    val schemaHG = StructType(List(StructField("Loadtype", IntegerType), StructField("Season", IntegerType), StructField("Daytype", IntegerType), 
+    val schemaHG = StructType(List(StructField("ID", LongType), StructField("Season", IntegerType), StructField("Daytype", IntegerType), 
                                    StructField("hourgroup", IntegerType), StructField("hourindex", LongType)))
 
-    val hgDF = sqlContext.createDataFrame(hgRowRDD, schemaHG).sort("Loadtype", "Season", "Daytype", "hourgroup", "hourindex")
+    val hgDF = sqlContext.createDataFrame(hgRowRDD, schemaHG).sort("ID", "Season", "Daytype", "hourgroup", "hourindex")
 
     if (runmode == 4) // machine learning mode 
-      hgDF.write.mode("append").jdbc(tgturl, "data_quality.hourgroup", new java.util.Properties)
+      hgDF.write.mode("append").jdbc(tgturl, pgHourGroup, new java.util.Properties)
 
     (arrHrPVRDD, arrKMMOpt, arrHGOpt, hgDF)  // Return the Tuple
   }
@@ -498,69 +490,107 @@ object MLfuncs {
   }
 
   /**
-   * Collect Hour Group data
+   * Collect Hour Group of PV data
    *
    */
-  def hourGroup(sc: SparkContext, sqlContext: SQLContext,
+  def hourGroupPQV(sc: SparkContext, sqlContext: SQLContext,
                 pvsdDF: DataFrame, qvsdDF: DataFrame, hgDF: DataFrame, arrHGOpt: ArrayBuffer[Option[RDD[(Int, Iterable[Long])]]]) = {
 
-     var loadtype = 1
-     var season   = 1
-     var daytype  = 1
+    var ids = Array(0L)
 
-     val arrpvhgDF = new ArrayBuffer[DataFrame]() 
+    // Now we get a list of meters either from config file, or all meters which will take quite long time
+    if (interactiveMeter == "true") { // get meter ids from config file
+      ids = meterIDs.toList.map(_.toString.toLong).toArray
+    }
+    else { // otherwise, get all meter ids
+      ids = pvsdDF.select("ID").distinct.rdd.map{r => r.getLong(0)}.collect
+    }
 
-     val schemaPVHG = StructType(StructField("Loadtype", IntegerType) ::
-                                 StructField("Season", IntegerType) ::
-                                 StructField("Daytype", IntegerType) ::
-                                 StructField("hourgroup", IntegerType) ::
-                                 StructField("POWER", DoubleType) ::
-                                 StructField("VOLT_C", DoubleType) :: Nil)
+    val schemaPVHG = StructType(StructField("ID", LongType) ::
+                                StructField("TS", TimestampType) ::
+                                StructField("Season", IntegerType) ::
+                                StructField("Daytype", IntegerType) ::
+                                StructField("hourgroup", IntegerType) ::
+                                StructField("POWER", DoubleType) ::
+                                StructField("VOLT_C", DoubleType) :: Nil)
 
+    var pvhg2DF = sqlContext.createDataFrame(sc.emptyRDD[Row], schemaPVHG)
+    var ai: Int = 0
 
-     val pvdataDF = pvsdDF.na.drop()
-                          .filter(s"VOLT_C <= $volt_high and VOLT_C >= $volt_low and Loadtype = $loadtype and Season = $season and Daytype = $daytype")
-                          .cache()
+    for (i <- 0 until ids.size) {
+      var id = ids(i)
 
-     //val hghi = hgDF.filter(s"Loadtype = $loadtype and Season = $season and Daytype = $daytype")
-     //               .select("hourgroup", "hourindex")
-     //               .sort("hourgroup", "hourindex") 
+      for (se <- 1 to numSeasons) {
+        for (dt <- 1 to numDaytypes) {
 
-     var pvhg2DF = sqlContext.createDataFrame(sc.emptyRDD[Row], schemaPVHG)
+          val pvdataDF = pvsdDF.na.drop()
+                               .filter(s"ID = $id and VOLT_C <= $volt_high and VOLT_C >= $volt_low and Season = $se and Daytype = $dt")
+                               .cache()
 
-     var arrHGinfo = arrHGOpt(0).get.collect // = pvhgmRDD.collect()
+          //val hghi = hgDF.filter(s"Loadtype = $loadtype and Season = $season and Daytype = $daytype")
+          //               .select("hourgroup", "hourindex")
+          //               .sort("hourgroup", "hourindex") 
 
-     //var pvhgDF: DataFrame = _
+          //get PV hour group Map info: pvhgmRDD.collect()
+          if (!arrHGOpt(ai).isEmpty) {
+            var arrHGinfo = arrHGOpt(ai).get.collect 
 
-     for(hg <- 0 until arrHGinfo.size) {
-
-       var filterStr: String = ""
-       var filterStr2: String = ""
-
-       var arrhi = arrHGinfo(hg)._2.toArray // hour index array
-
-       for(m <- 0 until arrhi.size) {
-         var hridx = arrhi(m) + 1 
-         filterStr += s"pmod(DTI, 96) = $hridx or "
-       }
-
-       filterStr2 = filterStr.dropRight(3) // remove last 3 chars
+            for(hg <- 0 until arrHGinfo.size) {
  
-       pvhg2DF = pvhg2DF.unionAll(pvdataDF.filter(s"$filterStr2")
-                            .withColumn("Loadtype", lit(loadtype))
-                            .withColumn("Season", lit(season))
-                            .withColumn("Daytype", lit(daytype))
-                            .withColumn("hourgroup", lit(hg))
-                            .select("Loadtype", "Season", "Daytype", "hourgroup", "POWER", "VOLT_C"))
+              var filterStr: String = ""
+              var filterStr2: String = ""
 
-       //arrpvhgDF += pvhgDF 
-       //pvhg2DF = pvhg2DF.unionAll(pvhgDF)
-       
-     }
+              var arrhi = arrHGinfo(hg)._2.toArray // hour index array
 
-     if (runmode == 4) // machine learning mode
-       pvhg2DF.write.mode("append").jdbc(tgturl, "data_quality.pvhg", new java.util.Properties) 
+              for(m <- 0 until arrhi.size) {
+                // from hour index, get DTI --> if hour idx = 1, then DTI = 5
+                var dti = arrhi(m)*4 + 1  
+                filterStr += s"pmod(DTI, 96) = $dti or pmod(DTI, 96) = $dti + 1 or pmod(DTI, 96) = $dti + 2 or pmod(DTI, 96) = $dti + 3 or "
+              }
+
+              filterStr2 = filterStr.dropRight(3) // remove last 3 chars
+ 
+              pvhg2DF = pvhg2DF.unionAll(pvdataDF.filter(s"$filterStr2")
+                               .withColumn("Season", lit(se))
+                               .withColumn("Daytype", lit(dt))
+                               .withColumn("hourgroup", lit(hg))
+                               .select("ID", "TS", "Season", "Daytype", "hourgroup", "POWER", "VOLT_C"))
+
+            }
+          }
+          ai += 1
+        }
+      }
+    } 
+
+    if (runmode == 4) // machine learning mode
+      pvhg2DF.write.mode("append").jdbc(tgturl, pgPVHG, new java.util.Properties) 
+
   }
+
+  /**
+   * Polynomial curve fitting
+   *   y = a + b*x1 + c*x2
+   */
+  def polyCurveFitting(x: Array[Double], y: Array[Double], n: Int) = {
+
+    val result = ArrayBuffer[Double]()
+  
+    val obs = new WeightedObservedPoints()
+  
+    for (i <- 0 until x.size) {
+      obs.add(x(i), y(i))
+    }
+  
+    // Instantiate a second-degree polynomial fitter.
+    val fitter = PolynomialCurveFitter.create(n)
+
+    // Retrieve fitted parameters (coefficients of the polynomial function).
+    val coeff = fitter.fit(obs.toList())
+
+    coeff
+  }
+
 
 }
 

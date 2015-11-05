@@ -73,9 +73,6 @@ object MDM {
    */
   def main(args: Array[String]) {
 
-    //val srcurl = "jdbc:oracle:thin:sgdm/sgdm@//192.168.5.21:1521/orcl"
-    //val tgturl  = "jdbc:postgresql://192.168.5.2:5433/sgdm_for_etl?user=wendong&password=wendong"
-    //val pgdti = "datetimeinterval"
     val pgmrdprob = "data_quality.mrdprob3"
     val pgvoltoutsum = "data_quality.voltoutsum"
 
@@ -91,10 +88,11 @@ object MDM {
     /*
      * Reading data from Oracle (or PostgreSQL, Parquet, CSV, etc.)
      */
-    // .............
     
-    // Load Meter Data from MDMS Oracle database tables into Spark DataFrame
-    val powerDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "YZ_E_MP_POWER_CURVE"))
+    // Load Meter Data from MDMS Source (Oracle) database tables into Spark DataFrame
+    // the step can use key-value pairs of partitionColumn, lowerBound, upperBound, numPartitions 
+    val power2DF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "YZ_E_MP_POWER_CURVE"))
+
     val voltDF  = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "YZ_E_MP_VOL_CURVE"))
     val curDF   = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "YZ_E_MP_CUR_CURVE"))
     val pfDF    = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "YZ_E_MP_FACTOR_CURVE"))
@@ -120,7 +118,7 @@ object MDM {
     val vDF = DataProcessing.voltProcessing(sc, sqlContext, voltDF, rdtyMap)
 
     // Processing Active and Reactive Power data
-    val pwrDF = DataProcessing.powerProcessing(sc, sqlContext, powerDF, rdtyMap)
+    val pwrDF = DataProcessing.powerProcessing(sc, sqlContext, power2DF, rdtyMap)
 
     // Processing Current data
     DataProcessing.curProcessing(sc, sqlContext, curDF, rdtyMap)
@@ -148,9 +146,10 @@ object MDM {
     val (pvsdDF, qvsdDF) = DataProcessing.PQVcurves(sc, sqlContext, vfDF, pwrDF, cjccDF)
 
     // Run k-means clustering on PV data
-    MLfuncs.kmclust(sc, sqlContext, pwrDF, pvsdDF, qvsdDF, numClusters, numIters, numRuns) 
+    val (arrHrPVRDD, arrKMMOpt, arrHGOpt, hgDF) = MLfuncs.kmclust(sc, sqlContext, pwrDF, pvsdDF, qvsdDF, numClusters, numIters, numRuns) 
 
-    // Clustering all meter data using Loadtype, Seasonal and Daytype
+    // Clustering all meter data using Seasonal and Daytype into Hour Groups
+    MLfuncs.hourGroupPQV(sc, sqlContext, pvsdDF, qvsdDF, hgDF, arrHGOpt)
 
   }
 }
