@@ -13,11 +13,18 @@ libraryDependencies += "org.apache.spark" %% "spark-streaming" % "1.5.0"
 
 libraryDependencies += "org.apache.spark" %% "spark-sql" % "1.5.0"
 
+libraryDependencies += "org.apache.spark" %% "spark-hive" % "1.5.0"
+
+//libraryDependencies += "org.apache.hive" % "hive" % "1.1.0"
+//libraryDependencies += "org.apache.hive" % "hive-jdbc" % "0.12.0"
+
 libraryDependencies += "org.apache.spark" %% "spark-mllib" % "1.5.0"
 
 libraryDependencies += "org.apache.parquet" % "parquet" % "1.8.1"
 
 libraryDependencies += "com.databricks" % "spark-csv_2.11" % "1.2.0"
+
+//libraryDependencies += "org.postgresql" % "postgresql" % "9.4-1201-jdbc41"
 
 //libraryDependencies += "org.viz.lightning" %% "lightning-scala" % "0.1.6" 
 libraryDependencies += "com.quantifind" %% "wisp" % "0.0.4"

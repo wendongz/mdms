@@ -21,6 +21,7 @@ import org.apache.spark._
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.SparkContext._
 import org.apache.spark.sql._
+import org.apache.spark.sql.hive.HiveContext
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.DataFrame
 
@@ -31,6 +32,7 @@ import com.databricks.spark.csv
 import com.databricks.spark.csv._
 
 import dataprocessing._
+import dataprocessing.DataProcessing
 import mdmutil._ 
 
 /**
@@ -65,6 +67,7 @@ object MDM {
   val numClusters = config.getInt("mdms.numClusters")
   val numIters = config.getInt("mdms.numIters")
   val numRuns = config.getInt("mdms.numRuns")
+  val numProcesses = config.getInt("mdms.numProcesses")
 
 
   /**
@@ -77,8 +80,10 @@ object MDM {
     val pgvoltoutsum = "data_quality.voltoutsum"
 
     val sparkConf = new SparkConf().setAppName("MDM")
+    //sparkConf.registerKryoClasses(Array(classOf[MDM], classOf[MLfuncs], classOf[DataProcessing]))
     val sc = new SparkContext(sparkConf)
-    val sqlContext = new SQLContext(sc)
+    //val sqlContext = new SQLContext(sc)
+    val sqlContext = new HiveContext(sc)
 
     // Importing the SQL context gives access to all the SQL functions and implicit conversions.
     import sqlContext.implicits._
@@ -105,45 +110,58 @@ object MDM {
     val phaseDF = sqlContext.load("jdbc", Map("url" -> tgturl, "dbtable" -> "phase"))
 
 
+    val DataProcessing = new DataProcessing()
+
     // Populate SGDM datetimeinterval table (3258 days)
     val dtiDF = DataProcessing.popDTItv(sc, sqlContext, numDays)
 
-    if (runmode == 2) // Populate SGDM tables
-      dtiDF.write.mode("append").jdbc(tgturl, pgdti, new java.util.Properties)
+    if (runmode == 2) { // Populate SGDM tables 
+      dtiDF.coalesce(numProcesses).write.mode("append").jdbc(tgturl, pgdti, new java.util.Properties)
+    }
 
     // Generate DataFrame from readingtype-measurementkind-phase, and return a Map
     val rdtyMap = DataProcessing.getReadingType(sqlContext, rdtyDF, mskDF, phaseDF)
 
     // Processing Voltage data
     val vDF = DataProcessing.voltProcessing(sc, sqlContext, voltDF, rdtyMap)
+    println("Finished voltProcessing.")
 
     // Processing Active and Reactive Power data
     val pwrDF = DataProcessing.powerProcessing(sc, sqlContext, power2DF, rdtyMap)
+    println("Finished powerProcessing.")
 
     // Processing Current data
     DataProcessing.curProcessing(sc, sqlContext, curDF, rdtyMap)
+    println("Finished curProcessing.")
 
     // Processing Power Factor data
     DataProcessing.pfProcessing(sc, sqlContext, pfDF, rdtyMap)
+    println("Finished pfProcessing.")
 
     // Processing Accumulated Energy data
     DataProcessing.enerProcessing(sc, sqlContext, readDF, rdtyMap)
+    println("Finished enerProcessing.")
 
     // Populate additional SGDM tables in PostgreSQL (identifiedobject, enddevice, meter, etc.)
-    if (runmode == 2) // Populate SGDM tables
+    if (runmode == 2) { // Populate SGDM tables
       DataProcessing.popSgdmTables(sc, sqlContext, vDF)
+      println("Finished popSgdmTables.")
+    }
 
     // Convert Voltage Phase A,B,C rows into Column Phase_A, Phase_B, Phase_C
     val vfDF = DataProcessing.convPhaseRow2Col(sqlContext, vDF).sort("ID", "DTI")
+    println("Finished convPhaseRow2Col.")
 
     // Compute statistics
     val vfsumDF = DataProcessing.voltQuality(sc, sqlContext, vfDF).sort("ID", "TS")
+    println("Finished voltQuality.")
 
     if (runmode == 2)  // Populate SGDM tables
-      vfsumDF.write.mode("append").jdbc(tgturl, pgvoltoutsum, new java.util.Properties)
+      vfsumDF.coalesce(numProcesses).write.mode("append").jdbc(tgturl, pgvoltoutsum, new java.util.Properties)
 
     // Compute PQ/PV curves
     val (pvsdDF, qvsdDF) = DataProcessing.PQVcurves(sc, sqlContext, vfDF, pwrDF, cjccDF)
+    println("Finished PQVcurves.")
 
     // Run k-means clustering on PV data
     val (arrHrPVRDD, arrKMMOpt, arrHGOpt, hgDF) = MLfuncs.kmclust(sc, sqlContext, pwrDF, pvsdDF, qvsdDF, numClusters, numIters, numRuns) 

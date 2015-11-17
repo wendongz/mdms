@@ -44,6 +44,7 @@ object MLfuncs {
   // Number of Buckets to bin a range of active power data points
   val numBucketAP  = config.getInt("mdms.numBucketAP")
   val numBucketV   = config.getInt("mdms.numBucketV")
+  val numProcesses = config.getInt("mdms.numProcesses")
 
   val volt_low  = config.getDouble("mdms.volt_low")
   val volt_high = config.getDouble("mdms.volt_high")
@@ -160,180 +161,183 @@ object MLfuncs {
       // Preparing feature vector of N features per hour for each hour (total 24 hours)
       // where each feature is a bin frequency of power data 
 
-      val hr0vP  = pvsd2DF.filter("pmod(DTI, 96) = 1").select("POWER")
+      var hr0vP  = pvsd2DF.filter("pmod(DTI, 96) = 1").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr1vP  = pvsd2DF.filter("pmod(DTI, 96) = 5").select("POWER")
+      var hr1vP  = pvsd2DF.filter("pmod(DTI, 96) = 5").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr2vP  = pvsd2DF.filter("pmod(DTI, 96) = 9").select("POWER")
+      var hr2vP  = pvsd2DF.filter("pmod(DTI, 96) = 9").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr3vP  = pvsd2DF.filter("pmod(DTI, 96) = 13").select("POWER")
+      var hr3vP  = pvsd2DF.filter("pmod(DTI, 96) = 13").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr4vP  = pvsd2DF.filter("pmod(DTI, 96) = 17").select("POWER")
+      var hr4vP  = pvsd2DF.filter("pmod(DTI, 96) = 17").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr5vP  = pvsd2DF.filter("pmod(DTI, 96) = 21").select("POWER")
+      var hr5vP  = pvsd2DF.filter("pmod(DTI, 96) = 21").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr6vP  = pvsd2DF.filter("pmod(DTI, 96) = 25").select("POWER")
+      var hr6vP  = pvsd2DF.filter("pmod(DTI, 96) = 25").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr7vP  = pvsd2DF.filter("pmod(DTI, 96) = 29").select("POWER")
+      var hr7vP  = pvsd2DF.filter("pmod(DTI, 96) = 29").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr8vP  = pvsd2DF.filter("pmod(DTI, 96) = 33").select("POWER")
+      var hr8vP  = pvsd2DF.filter("pmod(DTI, 96) = 33").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr9vP  = pvsd2DF.filter("pmod(DTI, 96) = 37").select("POWER")
+      var hr9vP  = pvsd2DF.filter("pmod(DTI, 96) = 37").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr10vP = pvsd2DF.filter("pmod(DTI, 96) = 41").select("POWER")
+      var hr10vP = pvsd2DF.filter("pmod(DTI, 96) = 41").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr11vP = pvsd2DF.filter("pmod(DTI, 96) = 45").select("POWER")
+      var hr11vP = pvsd2DF.filter("pmod(DTI, 96) = 45").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr12vP = pvsd2DF.filter("pmod(DTI, 96) = 49").select("POWER")
+      var hr12vP = pvsd2DF.filter("pmod(DTI, 96) = 49").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr13vP = pvsd2DF.filter("pmod(DTI, 96) = 53").select("POWER")
+      var hr13vP = pvsd2DF.filter("pmod(DTI, 96) = 53").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr14vP = pvsd2DF.filter("pmod(DTI, 96) = 57").select("POWER")
+      var hr14vP = pvsd2DF.filter("pmod(DTI, 96) = 57").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr15vP = pvsd2DF.filter("pmod(DTI, 96) = 61").select("POWER")
+      var hr15vP = pvsd2DF.filter("pmod(DTI, 96) = 61").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr16vP = pvsd2DF.filter("pmod(DTI, 96) = 65").select("POWER")
+      var hr16vP = pvsd2DF.filter("pmod(DTI, 96) = 65").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr17vP = pvsd2DF.filter("pmod(DTI, 96) = 69").select("POWER")
+      var hr17vP = pvsd2DF.filter("pmod(DTI, 96) = 69").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr18vP = pvsd2DF.filter("pmod(DTI, 96) = 73").select("POWER")
+      var hr18vP = pvsd2DF.filter("pmod(DTI, 96) = 73").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr19vP = pvsd2DF.filter("pmod(DTI, 96) = 77").select("POWER")
+      var hr19vP = pvsd2DF.filter("pmod(DTI, 96) = 77").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr20vP = pvsd2DF.filter("pmod(DTI, 96) = 81").select("POWER")
+      var hr20vP = pvsd2DF.filter("pmod(DTI, 96) = 81").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr21vP = pvsd2DF.filter("pmod(DTI, 96) = 85").select("POWER")
+      var hr21vP = pvsd2DF.filter("pmod(DTI, 96) = 85").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr22vP = pvsd2DF.filter("pmod(DTI, 96) = 89").select("POWER")
+      var hr22vP = pvsd2DF.filter("pmod(DTI, 96) = 89").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
-      val hr23vP = pvsd2DF.filter("pmod(DTI, 96) = 93").select("POWER")
+      var hr23vP = pvsd2DF.filter("pmod(DTI, 96) = 93").select("POWER")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketAP)
                           .map{r => r.toDouble}
     
       // Preparing feature vector of N features per hour for each hour (total 24 hours)
       // where each feature is a bin frequency of voltage data 
 
-      val hr0vV  = pvsd2DF.filter("pmod(DTI, 96) = 1").select("VOLT_C")
+      var hr0vV  = pvsd2DF.filter("pmod(DTI, 96) = 1").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr1vV  = pvsd2DF.filter("pmod(DTI, 96) = 5").select("VOLT_C")
+      var hr1vV  = pvsd2DF.filter("pmod(DTI, 96) = 5").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr2vV  = pvsd2DF.filter("pmod(DTI, 96) = 9").select("VOLT_C")
+      var hr2vV  = pvsd2DF.filter("pmod(DTI, 96) = 9").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr3vV  = pvsd2DF.filter("pmod(DTI, 96) = 13").select("VOLT_C")
+      var hr3vV  = pvsd2DF.filter("pmod(DTI, 96) = 13").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr4vV  = pvsd2DF.filter("pmod(DTI, 96) = 17").select("VOLT_C")
+      var hr4vV  = pvsd2DF.filter("pmod(DTI, 96) = 17").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr5vV  = pvsd2DF.filter("pmod(DTI, 96) = 21").select("VOLT_C")
+      var hr5vV  = pvsd2DF.filter("pmod(DTI, 96) = 21").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr6vV  = pvsd2DF.filter("pmod(DTI, 96) = 25").select("VOLT_C")
+      var hr6vV  = pvsd2DF.filter("pmod(DTI, 96) = 25").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr7vV  = pvsd2DF.filter("pmod(DTI, 96) = 29").select("VOLT_C")
+      var hr7vV  = pvsd2DF.filter("pmod(DTI, 96) = 29").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr8vV  = pvsd2DF.filter("pmod(DTI, 96) = 33").select("VOLT_C")
+      var hr8vV  = pvsd2DF.filter("pmod(DTI, 96) = 33").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr9vV  = pvsd2DF.filter("pmod(DTI, 96) = 37").select("VOLT_C")
+      var hr9vV  = pvsd2DF.filter("pmod(DTI, 96) = 37").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr10vV = pvsd2DF.filter("pmod(DTI, 96) = 41").select("VOLT_C")
+      var hr10vV = pvsd2DF.filter("pmod(DTI, 96) = 41").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr11vV = pvsd2DF.filter("pmod(DTI, 96) = 45").select("VOLT_C")
+      var hr11vV = pvsd2DF.filter("pmod(DTI, 96) = 45").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr12vV = pvsd2DF.filter("pmod(DTI, 96) = 49").select("VOLT_C")
+      var hr12vV = pvsd2DF.filter("pmod(DTI, 96) = 49").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr13vV = pvsd2DF.filter("pmod(DTI, 96) = 53").select("VOLT_C")
+      var hr13vV = pvsd2DF.filter("pmod(DTI, 96) = 53").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr14vV = pvsd2DF.filter("pmod(DTI, 96) = 57").select("VOLT_C")
+      var hr14vV = pvsd2DF.filter("pmod(DTI, 96) = 57").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr15vV = pvsd2DF.filter("pmod(DTI, 96) = 61").select("VOLT_C")
+      var hr15vV = pvsd2DF.filter("pmod(DTI, 96) = 61").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr16vV = pvsd2DF.filter("pmod(DTI, 96) = 65").select("VOLT_C")
+      var hr16vV = pvsd2DF.filter("pmod(DTI, 96) = 65").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr17vV = pvsd2DF.filter("pmod(DTI, 96) = 69").select("VOLT_C")
+      var hr17vV = pvsd2DF.filter("pmod(DTI, 96) = 69").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr18vV = pvsd2DF.filter("pmod(DTI, 96) = 73").select("VOLT_C")
+      var hr18vV = pvsd2DF.filter("pmod(DTI, 96) = 73").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr19vV = pvsd2DF.filter("pmod(DTI, 96) = 77").select("VOLT_C")
+      var hr19vV = pvsd2DF.filter("pmod(DTI, 96) = 77").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr20vV = pvsd2DF.filter("pmod(DTI, 96) = 81").select("VOLT_C")
+      var hr20vV = pvsd2DF.filter("pmod(DTI, 96) = 81").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr21vV = pvsd2DF.filter("pmod(DTI, 96) = 85").select("VOLT_C")
+      var hr21vV = pvsd2DF.filter("pmod(DTI, 96) = 85").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr22vV = pvsd2DF.filter("pmod(DTI, 96) = 89").select("VOLT_C")
+      var hr22vV = pvsd2DF.filter("pmod(DTI, 96) = 89").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
-      val hr23vV = pvsd2DF.filter("pmod(DTI, 96) = 93").select("VOLT_C")
+      var hr23vV = pvsd2DF.filter("pmod(DTI, 96) = 93").select("VOLT_C")
                           .map{r => r.getDecimal(0).toString.toDouble}.histogram(arrBucketV)
                           .map{r => r.toDouble}
 
       // Generate dense Vector for each hour, containing feature vector of power features and voltage features
-      val hr0vPV = Vectors.dense(Array.concat(hr0vP, hr0vV))
-      val hr1vPV = Vectors.dense(Array.concat(hr1vP, hr1vV))
-      val hr2vPV = Vectors.dense(Array.concat(hr2vP, hr2vV))
-      val hr3vPV = Vectors.dense(Array.concat(hr3vP, hr3vV))
-      val hr4vPV = Vectors.dense(Array.concat(hr4vP, hr4vV))
-      val hr5vPV = Vectors.dense(Array.concat(hr5vP, hr5vV))
-      val hr6vPV = Vectors.dense(Array.concat(hr6vP, hr6vV))
-      val hr7vPV = Vectors.dense(Array.concat(hr7vP, hr7vV))
-      val hr8vPV = Vectors.dense(Array.concat(hr8vP, hr8vV))
-      val hr9vPV = Vectors.dense(Array.concat(hr9vP, hr9vV))
-      val hr10vPV = Vectors.dense(Array.concat(hr10vP, hr10vV))
-      val hr11vPV = Vectors.dense(Array.concat(hr11vP, hr11vV))
-      val hr12vPV = Vectors.dense(Array.concat(hr12vP, hr12vV))
-      val hr13vPV = Vectors.dense(Array.concat(hr13vP, hr13vV))
-      val hr14vPV = Vectors.dense(Array.concat(hr14vP, hr14vV))
-      val hr15vPV = Vectors.dense(Array.concat(hr15vP, hr15vV))
-      val hr16vPV = Vectors.dense(Array.concat(hr16vP, hr16vV))
-      val hr17vPV = Vectors.dense(Array.concat(hr17vP, hr17vV))
-      val hr18vPV = Vectors.dense(Array.concat(hr18vP, hr18vV))
-      val hr19vPV = Vectors.dense(Array.concat(hr19vP, hr19vV))
-      val hr20vPV = Vectors.dense(Array.concat(hr20vP, hr20vV))
-      val hr21vPV = Vectors.dense(Array.concat(hr21vP, hr21vV))
-      val hr22vPV = Vectors.dense(Array.concat(hr22vP, hr22vV))
-      val hr23vPV = Vectors.dense(Array.concat(hr23vP, hr23vV))
+      var hr0vPV = Vectors.dense(Array.concat(hr0vP, hr0vV))
+      var hr1vPV = Vectors.dense(Array.concat(hr1vP, hr1vV))
+      var hr2vPV = Vectors.dense(Array.concat(hr2vP, hr2vV))
+      var hr3vPV = Vectors.dense(Array.concat(hr3vP, hr3vV))
+      var hr4vPV = Vectors.dense(Array.concat(hr4vP, hr4vV))
+      var hr5vPV = Vectors.dense(Array.concat(hr5vP, hr5vV))
+      var hr6vPV = Vectors.dense(Array.concat(hr6vP, hr6vV))
+      var hr7vPV = Vectors.dense(Array.concat(hr7vP, hr7vV))
+      var hr8vPV = Vectors.dense(Array.concat(hr8vP, hr8vV))
+      var hr9vPV = Vectors.dense(Array.concat(hr9vP, hr9vV))
+      var hr10vPV = Vectors.dense(Array.concat(hr10vP, hr10vV))
+      var hr11vPV = Vectors.dense(Array.concat(hr11vP, hr11vV))
+      var hr12vPV = Vectors.dense(Array.concat(hr12vP, hr12vV))
+      var hr13vPV = Vectors.dense(Array.concat(hr13vP, hr13vV))
+      var hr14vPV = Vectors.dense(Array.concat(hr14vP, hr14vV))
+      var hr15vPV = Vectors.dense(Array.concat(hr15vP, hr15vV))
+      var hr16vPV = Vectors.dense(Array.concat(hr16vP, hr16vV))
+      var hr17vPV = Vectors.dense(Array.concat(hr17vP, hr17vV))
+      var hr18vPV = Vectors.dense(Array.concat(hr18vP, hr18vV))
+      var hr19vPV = Vectors.dense(Array.concat(hr19vP, hr19vV))
+      var hr20vPV = Vectors.dense(Array.concat(hr20vP, hr20vV))
+      var hr21vPV = Vectors.dense(Array.concat(hr21vP, hr21vV))
+      var hr22vPV = Vectors.dense(Array.concat(hr22vP, hr22vV))
+      var hr23vPV = Vectors.dense(Array.concat(hr23vP, hr23vV))
+
+      // Release it from cache
+      pvsd2DF.unpersist()
 
       // Create RDD of Vector of Bin frequency for both power and voltage data for training
       sc.parallelize(Array(hr0vPV, hr1vPV, hr2vPV, hr3vPV, hr4vPV, hr5vPV, hr6vPV, hr7vPV, hr8vPV, hr9vPV, hr10vPV,
@@ -342,6 +346,7 @@ object MLfuncs {
 
     }
     else {// Empty RDD
+      pvsd2DF.unpersist()
       sc.emptyRDD[Vector]
     }
   }
@@ -367,6 +372,7 @@ object MLfuncs {
      * 1:  [912.2335701754388,0.5470634064912281,1.2927517543859652], 114
      * 2:  [3036.5732923076926,1.3335420715384614,3.026184615384616], 13
      */
+
     // Array of 24-Hours PV Feature for each loadtype, season, daytype
     // Access its value using getOrElse("0").asInstanceOf[Int]
     var arrHrPVRDD = new ArrayBuffer[RDD[(Vector, Long)]]()
@@ -390,9 +396,11 @@ object MLfuncs {
      */
     var clustersLSDOpt: Option[KMeansModel] = None
     var pvhgmRDDOpt: Option[RDD[(Int, Iterable[Long])]] = None
-    var numHourGroup: Int = 7
+    var numHourGroup: Int = 6
     var ids = Array(0L)
    
+    var hgMap = scala.collection.mutable.Map[(Long, Int, Int, Long),Int]()
+
     // Now we get a list of meters either from config file, or all meters which will take quite long time
     if (interactiveMeter == "true") { // get meter ids from config file
       ids = meterIDs.toList.map(_.toString.toLong).toArray
@@ -448,6 +456,7 @@ object MLfuncs {
 
               for(m <- 0 until arrhi.size) {
                 arrHGRow += Row(id, se, dt, hg, arrhi(m))
+                hgMap += (id, se, dt, arrhi(m)) -> hg
               }
             }
           }
@@ -460,6 +469,8 @@ object MLfuncs {
 
           arrHGOpt  += pvhgmRDDOpt
 
+          // Release it from cache
+          hrpvData.unpersist()
         }
       }
     } 
@@ -472,7 +483,7 @@ object MLfuncs {
     val hgDF = sqlContext.createDataFrame(hgRowRDD, schemaHG).sort("ID", "Season", "Daytype", "hourgroup", "hourindex")
 
     if (runmode == 4) // machine learning mode 
-      hgDF.write.mode("append").jdbc(tgturl, pgHourGroup, new java.util.Properties)
+      hgDF.coalesce(numProcesses).write.mode("append").jdbc(tgturl, pgHourGroup, new java.util.Properties)
 
     (arrHrPVRDD, arrKMMOpt, arrHGOpt, hgDF)  // Return the Tuple
   }
@@ -496,6 +507,7 @@ object MLfuncs {
   def hourGroupPQV(sc: SparkContext, sqlContext: SQLContext,
                 pvsdDF: DataFrame, qvsdDF: DataFrame, hgDF: DataFrame, arrHGOpt: ArrayBuffer[Option[RDD[(Int, Iterable[Long])]]]) = {
 
+    // Initialize the array of meter ids
     var ids = Array(0L)
 
     // Now we get a list of meters either from config file, or all meters which will take quite long time
@@ -523,14 +535,14 @@ object MLfuncs {
       for (se <- 1 to numSeasons) {
         for (dt <- 1 to numDaytypes) {
 
-          val pvdataDF = pvsdDF.na.drop()
+          var pvdataDF = pvsdDF.na.drop()
                                .filter(s"ID = $id and VOLT_C <= $volt_high and VOLT_C >= $volt_low and Season = $se and Daytype = $dt")
                                .cache()
 
           //val hghi = hgDF.filter(s"Loadtype = $loadtype and Season = $season and Daytype = $daytype")
           //               .select("hourgroup", "hourindex")
-          //               .sort("hourgroup", "hourindex") 
-
+          //               .sort("hourgroup", "hourindex")
+ 
           //get PV hour group Map info: pvhgmRDD.collect()
           if (!arrHGOpt(ai).isEmpty) {
             var arrHGinfo = arrHGOpt(ai).get.collect 
@@ -559,13 +571,18 @@ object MLfuncs {
             }
           }
           ai += 1
+
+          // shall we release the cache now??
+          //pvdataDF.rdd.unpersist() 
         }
       }
     } 
 
     if (runmode == 4) // machine learning mode
-      pvhg2DF.write.mode("append").jdbc(tgturl, pgPVHG, new java.util.Properties) 
-
+      pvhg2DF.coalesce(numProcesses).write.mode("append").jdbc(tgturl, pgPVHG, new java.util.Properties) 
+ 
+    // Release the cache
+    //pvdataDF.rdd.unpersist() 
   }
 
   /**
