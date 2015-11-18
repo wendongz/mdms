@@ -132,7 +132,9 @@ object MLfuncs {
   }
 
   /**
-   * Get 24 hourly Feature Vectors of active power and voltage
+   * Get 24 hourly Feature Vectors of active power and voltage. The calculation of each hour
+   * is a chain of actions: filter->select->histogram. If concurrent (Future) works, then 48 concurrent
+   * running should be fast. However, Future seems only submitting job to Spark, not running simultaneously. 
    *
    *   - Return: 
    *            RDD of Feature Vector containing PV information: RDD[Vector]
@@ -347,6 +349,110 @@ object MLfuncs {
     }
     else {// Empty RDD
       pvsd2DF.unpersist()
+      sc.emptyRDD[Vector]
+    }
+  }
+
+  /**
+   * A helper function to extract values
+   */
+  def extractBuckets(xs: Seq[Row]): Seq[(Double, Double)] = { 
+    xs.map(x => (x.getDouble(0), x.getDouble(1)))
+  }
+
+  /**
+   * Get 24 hourly Feature Vectors of active power and voltage. 
+   * This approach calculate pmod at one pass; then group by using buckets
+   * and callUDF of histogram_numeric, a hive function, on aggregated data
+   *
+   *   - Return: 
+   *            RDD of Feature Vector containing PV information: RDD[Vector]
+   */
+  def get24HoursPVF2(sc: SparkContext, pvsdDF: DataFrame, id: Long, season: Int, daytype: Int) = {
+
+    // Drop null values and abnornal voltage data from  PV curve data; also filter loadtype and seasonal daytype
+    val pvsdBuckets = pvsdDF.na.drop()
+                        .filter(s"ID = $id and VOLT_C <= $volt_high and VOLT_C >= $volt_low and Season = $season and Daytype = $daytype")
+                        .withColumn("bucket", pmod($"DTI", lit(96)))
+                        .select("ID", "TS", "VOLT_C", "POWER", "DTI", "SDTI", "Season", "Daytype", "bucket")
+                        //.cache()
+
+    // Histogram of P
+    val histoP = pvsdBuckets.groupBy($"bucket").agg(callUDF("histogram_numeric", toDouble($"POWER"), lit(numBucketAP))).sort("bucket")
+
+    // Histogram of V
+    val histoV = pvsdBuckets.groupBy($"bucket").agg(callUDF("histogram_numeric", toDouble($"VOLT_C"), lit(numBucketV))).sort("bucket")
+
+    if (!pvsdBuckets.rdd.isEmpty) { // Not Empty RDD
+
+      val histoPRDD: RDD[(Long, Seq[(Double, Double)])] = histoP.map{
+                       case Row(k: Long, hs: Seq[Row @unchecked]) => (k, extractBuckets(hs)) }  
+
+      val histoVRDD: RDD[(Long, Seq[(Double, Double)])] = histoV.map{
+                       case Row(k: Long, hs: Seq[Row @unchecked]) => (k, extractBuckets(hs)) }  
+
+      val arrhsP = histoPRDD.collect()
+      val arrhsV = histoVRDD.collect()
+
+      // Preparing feature vector of N features per hour for each hour (total 24 hours)
+      // where each feature is a bin frequency of power data 
+      // Generate dense Vector for each hour, containing feature vector of power features and voltage features
+
+      var hr0vPV = Vectors.dense(Array.concat(arrhsP(1)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,  
+                                              arrhsV(1)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr1vPV = Vectors.dense(Array.concat(arrhsP(5)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,  
+                                              arrhsV(5)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr2vPV = Vectors.dense(Array.concat(arrhsP(9)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,  
+                                              arrhsV(9)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr3vPV = Vectors.dense(Array.concat(arrhsP(13)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten, 
+                                              arrhsV(13)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr4vPV = Vectors.dense(Array.concat(arrhsP(17)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,  
+                                              arrhsV(17)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr5vPV = Vectors.dense(Array.concat(arrhsP(21)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,  
+                                              arrhsV(21)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr6vPV = Vectors.dense(Array.concat(arrhsP(25)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten, 
+                                              arrhsV(25)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr7vPV = Vectors.dense(Array.concat(arrhsP(29)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten, 
+                                              arrhsV(29)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr8vPV = Vectors.dense(Array.concat(arrhsP(33)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,  
+                                              arrhsV(33)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr9vPV = Vectors.dense(Array.concat(arrhsP(37)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten, 
+                                              arrhsV(37)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr10vPV = Vectors.dense(Array.concat(arrhsP(41)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,
+                                               arrhsV(41)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr11vPV = Vectors.dense(Array.concat(arrhsP(45)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,
+                                               arrhsV(45)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr12vPV = Vectors.dense(Array.concat(arrhsP(49)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,
+                                               arrhsV(49)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr13vPV = Vectors.dense(Array.concat(arrhsP(53)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,
+                                               arrhsV(53)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr14vPV = Vectors.dense(Array.concat(arrhsP(57)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,
+                                               arrhsV(57)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr15vPV = Vectors.dense(Array.concat(arrhsP(61)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,
+                                               arrhsV(61)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr16vPV = Vectors.dense(Array.concat(arrhsP(65)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,
+                                               arrhsV(65)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr17vPV = Vectors.dense(Array.concat(arrhsP(69)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten, 
+                                               arrhsV(69)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr18vPV = Vectors.dense(Array.concat(arrhsP(73)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,
+                                               arrhsV(73)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr19vPV = Vectors.dense(Array.concat(arrhsP(77)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten, 
+                                               arrhsV(77)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr20vPV = Vectors.dense(Array.concat(arrhsP(81)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,
+                                               arrhsV(81)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr21vPV = Vectors.dense(Array.concat(arrhsP(85)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten, 
+                                               arrhsV(85)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr22vPV = Vectors.dense(Array.concat(arrhsP(89)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,
+                                               arrhsV(89)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+      var hr23vPV = Vectors.dense(Array.concat(arrhsP(93)._2.map(r => Array(r._1, r._2/5.0)).toArray.flatten,  
+                                               arrhsV(93)._2.map(r => Array(r._1/1000.0, r._2/100.0)).toArray.flatten))
+
+      // Create RDD of Vector of Bin frequency for both power and voltage data for training
+      sc.parallelize(Array(hr0vPV, hr1vPV, hr2vPV, hr3vPV, hr4vPV, hr5vPV, hr6vPV, hr7vPV, hr8vPV, hr9vPV, hr10vPV,
+                           hr11vPV, hr12vPV, hr13vPV, hr14vPV, hr15vPV, hr16vPV, hr17vPV, hr18vPV, hr19vPV, hr20vPV,
+                           hr21vPV, hr22vPV, hr23vPV))
+    }
+    else {// Empty RDD
       sc.emptyRDD[Vector]
     }
   }
