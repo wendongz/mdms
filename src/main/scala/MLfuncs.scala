@@ -693,7 +693,6 @@ class MLfuncs extends Serializable {
     //var arrKMMOpt  = new ArrayBuffer[Option[KMeansModel]]()
 
     // Array of hourly group info
-    //var arrHG = new ArrayBuffer[RDD[(Int, Iterable[Long])]]()
     var arrHGOpt = new ArrayBuffer[Option[RDD[(Int, Iterable[Long])]]]()
 
     // Array of Row for Hour Group data
@@ -722,22 +721,9 @@ class MLfuncs extends Serializable {
       mids = meterIDs.toList.map(_.toString.toLong).toArray
     }
     else { // otherwise, get all meter ids or from table
-      //ids = pvsdDF.select("ID").distinct.rdd.map{r => r.getLong(0)}.collect
       midDF = sqlContext.load("jdbc", Map("url" -> tgturl, "dbtable" -> "data_quality.meterids"))
       var meterids = midDF.select("ID").map(r => r.getDecimal(0).toString.toLong).collect
-      //mids = meterids.slice(2, 3)
-      //mids = meterids.slice(3, 19)
-      //mids = meterids.slice(19, 23)
-      //mids = meterids.slice(23, 28)
-      //mids = meterids.slice(28, 44)
-      //mids = meterids.slice(45, 50)
-      //mids = meterids.slice(50, 58)
-      //mids = meterids.slice(357, 387)
-      //mids = meterids.slice(420, 440)
-      //mids = meterids.slice(530, 550)
-      //mids = meterids.slice(660, 710)
-      //mids = meterids.slice(620, 650)
-      mids = meterids.slice(800, 840)
+      mids = meterids //.slice(1, 100)
     }
  
     for (i <- 0 until mids.size) {
@@ -765,11 +751,6 @@ class MLfuncs extends Serializable {
           // Based on preliminary analysis, 24 hours data most likely to be grouped into 6 or 7 hourly groups 
           if (nonEmptyFlag == 1) {
 
-            //if (lt == 3 && se == 1 && dt == 2) // Residential, Spring, Weekend 
-            //  numHourGroup = 7
-            //else
-            //  numHourGroup = 6
- 
             // Clusters info (in KMeansModel)
             var clustersLSD = kmclustAlg(hrpvData, numHourGroup, 20, numRuns)
 
