@@ -112,6 +112,8 @@ object MDM {
 
     val DataProcessing = new DataProcessing()
 
+    val MLfuncs = new MLfuncs()
+
     // Populate SGDM datetimeinterval table (3258 days)
     val dtiDF = DataProcessing.popDTItv(sc, sqlContext, numDays)
 
@@ -164,10 +166,11 @@ object MDM {
     println("Finished PQVcurves.")
 
     // Run k-means clustering on PV data
-    val (arrHrPVRDD, arrKMMOpt, arrHGOpt, hgDF) = MLfuncs.kmclust(sc, sqlContext, pwrDF, pvsdDF, qvsdDF, numClusters, numIters, numRuns) 
+    val hgDF = MLfuncs.kmclust(sc, sqlContext, pwrDF, pvsdDF, qvsdDF, numClusters, numIters, numRuns) 
 
     // Clustering all meter data using Seasonal and Daytype into Hour Groups
-    MLfuncs.hourGroupPQV(sc, sqlContext, pvsdDF, qvsdDF, hgDF, arrHGOpt)
+    //MLfuncs.hourGroupPQV(sc, sqlContext, pvsdDF, qvsdDF, hgDF, arrHGOpt)
+    MLfuncs.meterHG(sqlContext, pvsdDF, qvsdDF)
 
   }
 }
