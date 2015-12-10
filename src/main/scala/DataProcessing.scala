@@ -1415,10 +1415,16 @@ class DataProcessing extends Serializable {
                      .select("ID", "TS", "VOLT_C", "POWER", "DTI", "SDTI", "Season", "Daytype")
                      .sort("ID", "DTI").cache()
 
-    // Write to database
+    // Write to database & Parquet files
     if (runmode == 2 || runmode == 3) { // Populate SGDM or data quality and analysis related tables
       pvsdDF.coalesce(numProcesses).write.mode("append").jdbc(tgturl, pgpvcurve, new java.util.Properties)
       qvsdDF.coalesce(numProcesses).write.mode("append").jdbc(tgturl, pgqvcurve, new java.util.Properties)
+
+    }
+
+    if (runmode == 1) {
+      pvsdDF.coalesce(numProcesses).write.mode(SaveMode.Overwrite).parquet(mdmHome + "src/test/resources/" + "pvsd.parquet")
+      qvsdDF.coalesce(numProcesses).write.mode(SaveMode.Overwrite).parquet(mdmHome + "src/test/resources/" + "pvsd.parquet")
     }
 
     (pvsdDF, qvsdDF)
