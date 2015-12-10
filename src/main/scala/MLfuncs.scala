@@ -70,6 +70,7 @@ class MLfuncs extends Serializable {
   val pgpvsdhg = "data_quality.pvsdhg"
   val pgpvsdhg2 = "data_quality.pvsdhg2"
   val qgpvsdhg2 = "data_quality.qvsdhg2"
+  val tblMIDs = "data_quality.meterids"
 
   // UDF applied to DataFrame columns
   val toDouble = udf((d: java.math.BigDecimal) => d.toString.toDouble)
@@ -516,11 +517,9 @@ class MLfuncs extends Serializable {
   }
 
   /**
-   * Get 24 hourly Feature Vectors of active power and voltage.
+   * Get 24 hourly Feature Vectors of active power and voltage for each meter and each season/daytype.
    * This approach calculates pmod at one pass; then group by using buckets
    * and using avg on aggregated data
-   *
-   * Note: this method is currently in use.
    *
    *   - Return:
    *            RDD of Feature Vector containing PV information: RDD[Vector]
@@ -661,14 +660,181 @@ class MLfuncs extends Serializable {
   }
 
 
-
   /**
-   * k-Means clustering main program 
+   * Get 24 hourly Feature Vectors of active power and voltage for all meter, season/daytype.
+   * This approach calculates pmod at one pass; then group by using ID, buckets, season, daytype
+   * and using avg on aggregated data
    *
-   *   - numRuns: Number of times to run k-mean algorithm to find a globally optimal solution
+   * Note: this method is currently in use due to the speed.
    *
    *   - Return:
-   *             Tuple4
+   *            Arrays of Feature Vector containing PV information
+   */
+  def get24HoursPVFAll(sc: SparkContext, sqlContext: SQLContext, pvsdDF: DataFrame, qvsdDF: DataFrame) = {
+
+    import sqlContext.implicits._
+
+    var pvsdBuckets = pvsdDF.na.drop()
+                        .filter(s"VOLT_C <= $volt_high and VOLT_C >= $volt_low")
+                        .withColumn("bucket", pmod($"DTI", lit(96)))
+                        .select("ID", "TS", "VOLT_C", "POWER", "DTI", "SDTI", "Season", "Daytype", "bucket") 
+
+    // P feature
+    var featureP = pvsdBuckets.groupBy($"ID", $"bucket", $"Season", $"Daytype").agg(avg("POWER")).sort("ID", "bucket", "Season", "Daytype").cache()
+    featureP.count //force to be cached
+
+    // V feature
+    var featureV = pvsdBuckets.groupBy($"ID", $"bucket", $"Season", $"Daytype").agg(avg("VOLT_C")).sort("ID", "bucket", "Season", "Daytype").cache()
+    featureV.count //force to be cached
+
+    val arrfp = featureP.collect
+    val arrfv = featureV.collect
+
+    if (runmode == 1 || runmode == 4) 
+      featureP.select("ID").distinct.coalesce(numProcesses).write.mode("overwrite").jdbc(tgturl, tblMIDs, new java.util.Properties)
+
+    (arrfp, arrfv)
+  }
+
+ /**
+   * Get 24 hourly Feature Vectors of active power and voltage for one meter at specific season/daytype.
+   *
+   * Note:  this method is currently in use due to the speed. 
+   *
+   *   - Return:
+   *            Tuple2 - (RDD of Feature Vector containing PV information: RDD[Vector], nonEmptyFlag)
+   */
+  def getFeatureVector(sc: SparkContext, arrfp: Array[Row], arrfv: Array[Row], id: Long, se: Int, dt: Int) = {
+
+    // Retrieve readings from array of Row given id, se, dt
+    var fpi = for {
+      r <- arrfp 
+      if (r.getDecimal(0).toString.toLong == id && r(2) == se && r(3) == dt ) 
+    } yield {r.getDecimal(4).toString.toDouble}
+
+    var fvi = for {
+      r <- arrfv 
+      if (r.getDecimal(0).toString.toLong == id && r(2) == se && r(3) == dt ) 
+    } yield {r.getDecimal(4).toString.toDouble}
+
+    // Initialize Vector
+    var hr0vPV = Vectors.dense(0); var hr1vPV = Vectors.dense(0); var hr2vPV = Vectors.dense(0); var hr3vPV = Vectors.dense(0);
+    var hr4vPV = Vectors.dense(0); var hr5vPV = Vectors.dense(0); var hr6vPV = Vectors.dense(0); var hr7vPV = Vectors.dense(0);
+    var hr8vPV = Vectors.dense(0); var hr9vPV = Vectors.dense(0); var hr10vPV = Vectors.dense(0); var hr11vPV = Vectors.dense(0);
+    var hr12vPV = Vectors.dense(0); var hr13vPV = Vectors.dense(0); var hr14vPV = Vectors.dense(0); var hr15vPV = Vectors.dense(0);
+    var hr16vPV = Vectors.dense(0); var hr17vPV = Vectors.dense(0); var hr18vPV = Vectors.dense(0); var hr19vPV = Vectors.dense(0);
+    var hr20vPV = Vectors.dense(0); var hr21vPV = Vectors.dense(0); var hr22vPV = Vectors.dense(0); var hr23vPV = Vectors.dense(0);
+
+    // Preparing feature vector of N features per hour for each hour (total 24 hours)
+    // Generate dense Vector for each hour, containing feature vector of power features and voltage features
+
+    if (fpi.size == 96) {
+      hr0vPV = Vectors.dense(Array(fpi(1), fvi(1)/volt_nominal))
+      hr1vPV = Vectors.dense(Array(fpi(5), fvi(5)/volt_nominal))
+      hr2vPV = Vectors.dense(Array(fpi(9), fvi(9)/volt_nominal))
+      hr3vPV = Vectors.dense(Array(fpi(13), fvi(13)/volt_nominal))
+      hr4vPV = Vectors.dense(Array(fpi(17), fvi(17)/volt_nominal))
+      hr5vPV = Vectors.dense(Array(fpi(21), fvi(21)/volt_nominal))
+      hr6vPV = Vectors.dense(Array(fpi(25), fvi(25)/volt_nominal))
+      hr7vPV = Vectors.dense(Array(fpi(29), fvi(29)/volt_nominal))
+      hr8vPV = Vectors.dense(Array(fpi(33), fvi(33)/volt_nominal))
+      hr9vPV = Vectors.dense(Array(fpi(37), fvi(37)/volt_nominal))
+      hr10vPV = Vectors.dense(Array(fpi(41), fvi(41)/volt_nominal))
+      hr11vPV = Vectors.dense(Array(fpi(45), fvi(45)/volt_nominal))
+      hr12vPV = Vectors.dense(Array(fpi(49), fvi(49)/volt_nominal))
+      hr13vPV = Vectors.dense(Array(fpi(53), fvi(53)/volt_nominal))
+      hr14vPV = Vectors.dense(Array(fpi(57), fvi(57)/volt_nominal))
+      hr15vPV = Vectors.dense(Array(fpi(61), fvi(61)/volt_nominal))
+      hr16vPV = Vectors.dense(Array(fpi(65), fvi(65)/volt_nominal))
+      hr17vPV = Vectors.dense(Array(fpi(69), fvi(69)/volt_nominal))
+      hr18vPV = Vectors.dense(Array(fpi(73), fvi(73)/volt_nominal))
+      hr19vPV = Vectors.dense(Array(fpi(77), fvi(77)/volt_nominal))
+      hr20vPV = Vectors.dense(Array(fpi(81), fvi(81)/volt_nominal))
+      hr21vPV = Vectors.dense(Array(fpi(85), fvi(85)/volt_nominal))
+      hr22vPV = Vectors.dense(Array(fpi(89), fvi(89)/volt_nominal))
+      hr23vPV = Vectors.dense(Array(fpi(93), fvi(93)/volt_nominal))
+    }
+    else if (fpi.size == 48) {
+      hr0vPV = Vectors.dense(Array(fpi(1), fvi(1)/volt_nominal))
+      hr1vPV = Vectors.dense(Array(fpi(3), fvi(3)/volt_nominal))
+      hr2vPV = Vectors.dense(Array(fpi(5), fvi(5)/volt_nominal))
+      hr3vPV = Vectors.dense(Array(fpi(7), fvi(7)/volt_nominal))
+      hr4vPV = Vectors.dense(Array(fpi(9), fvi(9)/volt_nominal))
+      hr5vPV = Vectors.dense(Array(fpi(11), fvi(11)/volt_nominal))
+      hr6vPV = Vectors.dense(Array(fpi(13), fvi(13)/volt_nominal))
+      hr7vPV = Vectors.dense(Array(fpi(15), fvi(15)/volt_nominal))
+      hr8vPV = Vectors.dense(Array(fpi(17), fvi(17)/volt_nominal))
+      hr9vPV = Vectors.dense(Array(fpi(19), fvi(19)/volt_nominal))
+      hr10vPV = Vectors.dense(Array(fpi(21), fvi(21)/volt_nominal))
+      hr11vPV = Vectors.dense(Array(fpi(23), fvi(23)/volt_nominal))
+      hr12vPV = Vectors.dense(Array(fpi(25), fvi(25)/volt_nominal))
+      hr13vPV = Vectors.dense(Array(fpi(27), fvi(27)/volt_nominal))
+      hr14vPV = Vectors.dense(Array(fpi(29), fvi(29)/volt_nominal))
+      hr15vPV = Vectors.dense(Array(fpi(31), fvi(31)/volt_nominal))
+      hr16vPV = Vectors.dense(Array(fpi(33), fvi(33)/volt_nominal))
+      hr17vPV = Vectors.dense(Array(fpi(35), fvi(35)/volt_nominal))
+      hr18vPV = Vectors.dense(Array(fpi(37), fvi(37)/volt_nominal))
+      hr19vPV = Vectors.dense(Array(fpi(39), fvi(39)/volt_nominal))
+      hr20vPV = Vectors.dense(Array(fpi(41), fvi(41)/volt_nominal))
+      hr21vPV = Vectors.dense(Array(fpi(43), fvi(43)/volt_nominal))
+      hr22vPV = Vectors.dense(Array(fpi(45), fvi(45)/volt_nominal))
+      hr23vPV = Vectors.dense(Array(fpi(47), fvi(47)/volt_nominal))
+
+      // log.info(s"Found datapoints 48 in : $id, $se, $dt")
+      println(s"Found  datapoints 48 in: $id, $se, $dt")
+    }
+    else if (fpi.size == 24) {
+      hr0vPV = Vectors.dense(Array(fpi(0), fvi(0)/volt_nominal))
+      hr1vPV = Vectors.dense(Array(fpi(1), fvi(1)/volt_nominal))
+      hr2vPV = Vectors.dense(Array(fpi(2), fvi(2)/volt_nominal))
+      hr3vPV = Vectors.dense(Array(fpi(3), fvi(3)/volt_nominal))
+      hr4vPV = Vectors.dense(Array(fpi(4), fvi(4)/volt_nominal))
+      hr5vPV = Vectors.dense(Array(fpi(5), fvi(5)/volt_nominal))
+      hr6vPV = Vectors.dense(Array(fpi(6), fvi(6)/volt_nominal))
+      hr7vPV = Vectors.dense(Array(fpi(7), fvi(7)/volt_nominal))
+      hr8vPV = Vectors.dense(Array(fpi(8), fvi(8)/volt_nominal))
+      hr9vPV = Vectors.dense(Array(fpi(9), fvi(9)/volt_nominal))
+      hr10vPV = Vectors.dense(Array(fpi(10), fvi(10)/volt_nominal))
+      hr11vPV = Vectors.dense(Array(fpi(11), fvi(11)/volt_nominal))
+      hr12vPV = Vectors.dense(Array(fpi(12), fvi(12)/volt_nominal))
+      hr13vPV = Vectors.dense(Array(fpi(13), fvi(13)/volt_nominal))
+      hr14vPV = Vectors.dense(Array(fpi(14), fvi(14)/volt_nominal))
+      hr15vPV = Vectors.dense(Array(fpi(15), fvi(15)/volt_nominal))
+      hr16vPV = Vectors.dense(Array(fpi(16), fvi(16)/volt_nominal))
+      hr17vPV = Vectors.dense(Array(fpi(17), fvi(17)/volt_nominal))
+      hr18vPV = Vectors.dense(Array(fpi(18), fvi(18)/volt_nominal))
+      hr19vPV = Vectors.dense(Array(fpi(19), fvi(19)/volt_nominal))
+      hr20vPV = Vectors.dense(Array(fpi(20), fvi(20)/volt_nominal))
+      hr21vPV = Vectors.dense(Array(fpi(21), fvi(21)/volt_nominal))
+      hr22vPV = Vectors.dense(Array(fpi(22), fvi(22)/volt_nominal))
+      hr23vPV = Vectors.dense(Array(fpi(23), fvi(23)/volt_nominal))
+    }
+    else { // irregular data 
+      urdata += Row(id, se, dt) 
+      //log.info(s"Found irregular data: $id, $se, $dt")
+      println(s"Found irregular data: $id, $se, $dt")
+    }
+
+    if (fpi.size > 0) {
+      // Create RDD of Vector of Bin frequency for both power and voltage data for training
+      var hrpvData = sc.parallelize(Array(hr0vPV, hr1vPV, hr2vPV, hr3vPV, hr4vPV, hr5vPV, hr6vPV, hr7vPV, hr8vPV, hr9vPV, hr10vPV,
+                         hr11vPV, hr12vPV, hr13vPV, hr14vPV, hr15vPV, hr16vPV, hr17vPV, hr18vPV, hr19vPV, hr20vPV,
+                         hr21vPV, hr22vPV, hr23vPV))
+
+      // Return RDD, and flag for non-empty
+      (hrpvData, 1)
+    }
+    else {
+      (sc.emptyRDD[Vector], 0)
+    }
+  }
+
+  /**
+   * k-Means clustering to compute Hour Groups 
+   *
+   *
+   *   - Return:
+   *             DataFrame of Hour Groups
    */
   def kmclust(sc: SparkContext, sqlContext: SQLContext, 
               pwrDF: DataFrame, pvsdDF: DataFrame, qvsdDF: DataFrame, 
@@ -716,45 +882,39 @@ class MLfuncs extends Serializable {
 
     var mids = Array(0L)
 
+    // Get arrays of PV feature Vector; Also populate tblMIDs 
+    val (arrfp, arrfv) = get24HoursPVFAll(sc, sqlContext, pvsdDF, qvsdDF)
+
     // Now we get a list of meters either from config file, or all meters which will take quite long time
     if (interactiveMeter == "true") { // get meter ids from config file
       mids = meterIDs.toList.map(_.toString.toLong).toArray
     }
     else { // otherwise, get all meter ids or from table
-      midDF = sqlContext.load("jdbc", Map("url" -> tgturl, "dbtable" -> "data_quality.meterids"))
+      midDF = sqlContext.load("jdbc", Map("url" -> tgturl, "dbtable" -> tblMIDs))
       var meterids = midDF.select("ID").map(r => r.getDecimal(0).toString.toLong).collect
       mids = meterids //.slice(1, 100)
     }
  
+    // Loop for each meter/season/daytype
     for (i <- 0 until mids.size) {
       var id = mids(i)
 
       for (se <- 1 to numSeasons) {
         for (dt <- 1 to numDaytypes) {
 
-          //log.info(s"Beginning get24HoursPVF3: $id, $se, $dt")
-          println(s"Beginning get24HoursPVF3: $id, $se, $dt")
+          //log.info(s"Beginning processing: $id, $se, $dt")
+          println(s"Beginning processing: $id, $se, $dt")
 
-          // Get parsed data of PV feature Vector and cache it
-          var (hrpvData2, nonEmptyFlag) = get24HoursPVF3(sc, sqlContext, pvsdDF, id, se, dt)
-
-          var hrpvData = hrpvData2.cache()
-
-          //log.info(s"Finished get24HoursPVF3: $id, $se, $dt")
-          println(s"Finished get24HoursPVF3: $id, $se, $dt")
+          var (hrpvData, nonEmptyFlag) = getFeatureVector(sc, arrfp, arrfv, id, se, dt) 
 
           // Attache index to each hour's feature data
           var hrpvDataZI = hrpvData.zipWithIndex
-
-          //arrHrPVRDD += hrpvDataZI // may contain empty RDD
 
           // Based on preliminary analysis, 24 hours data most likely to be grouped into 6 or 7 hourly groups 
           if (nonEmptyFlag == 1) {
 
             // Clusters info (in KMeansModel)
             var clustersLSD = kmclustAlg(hrpvData, numHourGroup, 20, numRuns)
-
-            //clustersLSDOpt = Some(clustersLSD)
 
             // For each data point/hour-feature Vector, compute its cluster number
             var clusterPVPred = hrpvData.map(x => clustersLSD.predict(x))
@@ -765,8 +925,6 @@ class MLfuncs extends Serializable {
             // Get the Hourly Group and its members: RDD[(Int, Iterable[Long])]
             // in the format of (1,CompactBuffer(17, 18, 19)), (5,CompactBuffer(0, 1, 2, 3, 4, 5, 6)), ...
             var pvhgmRDD = clusterPVMap.map{r => (r._2, r._1._2)}.groupByKey
-
-            //pvhgmRDDOpt = Some(pvhgmRDD)
 
             var arrHGinfo = pvhgmRDD.collect  // it's not large , so we can use collect()
 
@@ -786,11 +944,12 @@ class MLfuncs extends Serializable {
             pvhgmRDDOpt = None
           }
 
-          //arrKMMOpt += clustersLSDOpt
-          //arrHGOpt  += pvhgmRDDOpt
-
           // Release it from cache
-          hrpvData.unpersist()
+          //hrpvData.unpersist()
+
+          //log.info(s"Finished processing: $id, $se, $dt")
+          println(s"Finished processing: $id, $se, $dt")
+
         }
       }
     } 
@@ -878,6 +1037,9 @@ class MLfuncs extends Serializable {
 
   /**
    * Collect Hour Group of PV data
+   * 
+   * Note: It is slow to do unionAll on many DataFrames; 
+   *       therefore currently not in use.
    *
    */
   def hourGroupPQV(sc: SparkContext, sqlContext: SQLContext,
@@ -915,10 +1077,6 @@ class MLfuncs extends Serializable {
                                .filter(s"ID = $id and VOLT_C <= $volt_high and VOLT_C >= $volt_low and Season = $se and Daytype = $dt")
                                .cache()
 
-          //val hghi = hgDF.filter(s"Loadtype = $loadtype and Season = $season and Daytype = $daytype")
-          //               .select("hourgroup", "hourindex")
-          //               .sort("hourgroup", "hourindex")
- 
           //get PV hour group Map info: pvhgmRDD.collect()
           if (!arrHGOpt(ai).isEmpty) {
             var arrHGinfo = arrHGOpt(ai).get.collect 
@@ -943,22 +1101,15 @@ class MLfuncs extends Serializable {
                                .withColumn("Daytype", lit(dt))
                                .withColumn("hourgroup", lit(hg))
                                .select("ID", "TS", "Season", "Daytype", "hourgroup", "POWER", "VOLT_C"))
-
             }
           }
           ai += 1
-
-          // shall we release the cache now??
-          //pvdataDF.rdd.unpersist() 
         }
       }
     } 
 
     if (runmode == 4) // machine learning mode
       pvhg2DF.coalesce(numProcesses).write.mode("append").jdbc(tgturl, pgPVHG, new java.util.Properties) 
- 
-    // Release the cache
-    //pvdataDF.rdd.unpersist() 
   }
 
   /**
@@ -983,7 +1134,6 @@ class MLfuncs extends Serializable {
 
     coeff
   }
-
 
 }
 
