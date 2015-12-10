@@ -905,7 +905,11 @@ class MLfuncs extends Serializable {
           //log.info(s"Beginning processing: $id, $se, $dt")
           println(s"Beginning processing: $id, $se, $dt")
 
-          var (hrpvData, nonEmptyFlag) = getFeatureVector(sc, arrfp, arrfv, id, se, dt) 
+          // Retrieve feature vector given meter id, season, daytype
+          var (hrpvData2, nonEmptyFlag) = getFeatureVector(sc, arrfp, arrfv, id, se, dt) 
+
+          // Cache the feature vector
+          var hrpvData = hrpvData2.cache()
 
           // Attache index to each hour's feature data
           var hrpvDataZI = hrpvData.zipWithIndex
@@ -913,7 +917,8 @@ class MLfuncs extends Serializable {
           // Based on preliminary analysis, 24 hours data most likely to be grouped into 6 or 7 hourly groups 
           if (nonEmptyFlag == 1) {
 
-            // Clusters info (in KMeansModel)
+            // Clusters info (in KMeansModel) - 
+            // Run k-Means clustering on each meter, with each season and daytype 
             var clustersLSD = kmclustAlg(hrpvData, numHourGroup, 20, numRuns)
 
             // For each data point/hour-feature Vector, compute its cluster number
@@ -945,7 +950,7 @@ class MLfuncs extends Serializable {
           }
 
           // Release it from cache
-          //hrpvData.unpersist()
+          hrpvData.unpersist()
 
           //log.info(s"Finished processing: $id, $se, $dt")
           println(s"Finished processing: $id, $se, $dt")
