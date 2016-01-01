@@ -52,13 +52,13 @@ class DataProcessing extends Serializable {
   val volt_low  = config.getDouble("mdms.volt_low")
   val volt_high = config.getDouble("mdms.volt_high")
 
-  val voltLow1 = 10.0
-  val voltLow2 = 90.0
-  val voltLow3 = 110.0
-  val voltLow4 = 188.0
-  val voltHigh = 236.0
-  val voltHigh2 = 253.0
-  val voltDefault = 220.0
+  val voltLow1 = config.getDouble("mdms.voltLow1") //10.0
+  val voltLow2 = config.getDouble("mdms.voltLow2") //93.5
+  val voltLow3 = config.getDouble("mdms.voltLow3") //126.5
+  val voltLow4 = config.getDouble("mdms.voltLow4") //188.0
+  val voltHigh = config.getDouble("mdms.voltHigh") //236.0
+  val voltHigh2 = config.getDouble("mdms.voltHigh2") //253.0
+  val voltDefault = config.getDouble("mdms.voltDefault") //220.0
 
   // table to write
   val pgdqVolt = "data_quality.volt"
@@ -230,17 +230,14 @@ class DataProcessing extends Serializable {
     //val vfDF = convPhaseRow2Col(sqlContext, vDF).sort("ID", "DTI")
 
     // Select low voltage data
-    val voltLow4DF = vDF.filter(s"VOLT < $voltLow4 and VOLT > $voltLow3") 
+    val voltLow4DF = vDF.filter(s"(VOLT < $voltLow4 and VOLT > $voltLow3) or (VOLT < $voltLow2 and VOLT > $voltLow1)") 
     //val voltLow4DF = vfDF.filter(s"(VOLT_A < $voltLow4 and VOLT_A > $voltLow3) OR (VOLT_B < $voltLow4 and VOLT_B > $voltLow3) OR (VOLT_C < $voltLow4 and VOLT_C > $voltLow3)") 
 
     // Select high voltage data
     val voltHighDF = vDF.filter(s"VOLT > $voltHigh") 
-    //val voltHighDF = vfDF.filter(s"VOLT_A > $voltHigh OR VOLT_B > $voltHigh OR VOLT_C > $voltHigh ") 
 
     // Select outage voltage data
     val voltOutDF = vDF.filter(s"VOLT < $voltLow1") 
-    //val voltOutDF = vfDF.filter(s"VOLT_A < $voltLow1 OR VOLT_B < $voltLow1 OR VOLT_C < $voltLow1 ") 
-
 
     // drop null values
     val voltdnDF = voltDF.na.drop()
@@ -696,22 +693,22 @@ class DataProcessing extends Serializable {
     val rdtyidIB = rdtymphDF.filter("tou is null and code = 'A' and phasename LIKE '%B'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
     val rdtyidIC = rdtymphDF.filter("tou is null and code = 'A' and phasename LIKE '%C'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
 
-    val rdtyidP = rdtymphDF.filter("tou is null and code = 'P' and phasename = 'none'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
+    val rdtyidP = rdtymphDF.filter("tou is null and code = 'P' and phasename LIKE '%none%'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
     val rdtyidPA = rdtymphDF.filter("tou is null and code = 'P' and phasename LIKE '%A'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
     val rdtyidPB = rdtymphDF.filter("tou is null and code = 'P' and phasename LIKE '%B'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
     val rdtyidPC = rdtymphDF.filter("tou is null and code = 'P' and phasename LIKE '%C'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
-    val rdtyidQ = rdtymphDF.filter("tou is null and code = 'Q' and phasename = 'none'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
+    val rdtyidQ = rdtymphDF.filter("tou is null and code = 'Q' and phasename LIKE '%none%'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
     val rdtyidQA = rdtymphDF.filter("tou is null and code = 'Q' and phasename LIKE '%A'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
     val rdtyidQB = rdtymphDF.filter("tou is null and code = 'Q' and phasename LIKE '%B'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
     val rdtyidQC = rdtymphDF.filter("tou is null and code = 'Q' and phasename LIKE '%C'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
 
-    val rdtyidPF = rdtymphDF.filter("tou is null and code = 'PF' and phasename = 'none'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
+    val rdtyidPF = rdtymphDF.filter("tou is null and code = 'PF' and phasename LIKE '%none%'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
     val rdtyidPFA = rdtymphDF.filter("tou is null and code = 'PF' and phasename LIKE '%A'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
     val rdtyidPFB = rdtymphDF.filter("tou is null and code = 'PF' and phasename LIKE '%B'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
     val rdtyidPFC = rdtymphDF.filter("tou is null and code = 'PF' and phasename LIKE '%C'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
 
-    val rdtyidEP = rdtymphDF.filter("tou is null and code = 'EP' and phasename = 'none'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
-    val rdtyidEQ = rdtymphDF.filter("tou is null and code = 'EQ' and phasename = 'none'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
+    val rdtyidEP = rdtymphDF.filter("tou is null and code = 'EP' and phasename LIKE '%none%'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
+    val rdtyidEQ = rdtymphDF.filter("tou is null and code = 'EQ' and phasename LIKE '%none%'").select("readingtypeid").rdd.map(r => r.getLong(0)).first
 
     // Generate Map for readingtype id
     rdtyMap += ("rdtyVA" -> rdtyidVA)
@@ -754,7 +751,7 @@ class DataProcessing extends Serializable {
 
     // Convert all power data of 96 columns to rows
     // may need to filter powerDF first by data_type
-    val power2DF = powerDF.filter("DATA_TYPE=1 or DATA_TYPE=5")
+    val power2DF = powerDF//.filter("DATA_TYPE=1 or DATA_TYPE=5")
 
     val pwrDF = convCol2RowPwr(sqlContext, power2DF).cache()  
 
@@ -1319,7 +1316,7 @@ class DataProcessing extends Serializable {
     val meterIdoDF = sqlContext.createDataFrame(meterIdoRDD, schemaIDO)
 
     // Populate SGDM identifiedobject table
-    meterIdoDF.coalesce(numProcesses).write.mode("append").jdbc(tgturl, pgido, new java.util.Properties)
+    meterIdoDF.coalesce(numProcesses).write.mode("overwrite").jdbc(tgturl, pgido, new java.util.Properties)
 
     // Create DataFrame Schema for SGDM enddevice table
     val schemaED = StructType(List(StructField("enddeviceid", LongType), StructField("ispan", BooleanType), StructField("isvirtual", BooleanType),
@@ -1402,7 +1399,7 @@ class DataProcessing extends Serializable {
                      .withColumn("Season", toSeason(pvDF("TS")))
                      .withColumn("Daytype", toDaytype(pvDF("TS")))
                      .select("ID", "TS", "VOLT_C", "POWER", "DTI", "SDTI", "Season", "Daytype")
-                     .sort("ID", "DTI").cache()
+                     .cache() //.sort("ID", "DTI").cache()
 
     // Generate QV curve data
     val qvDF = vfDF.as('volt).join(rpDF.as('rp), vfDF("ID") === rpDF("ID") && vfDF("DTI") === rpDF("DTI"), "inner")
@@ -1413,7 +1410,7 @@ class DataProcessing extends Serializable {
                      .withColumn("Season", toSeason(pvDF("TS")))
                      .withColumn("Daytype", toDaytype(pvDF("TS")))
                      .select("ID", "TS", "VOLT_C", "POWER", "DTI", "SDTI", "Season", "Daytype")
-                     .sort("ID", "DTI").cache()
+                     .cache() //.sort("ID", "DTI").cache()
 
     // Write to database & Parquet files
     if (runmode == 2 || runmode == 3) { // Populate SGDM or data quality and analysis related tables
