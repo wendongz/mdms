@@ -52,9 +52,11 @@ class MLfuncs extends Serializable {
   val numBucketV   = config.getInt("mdms.numBucketV")
   val numProcesses = config.getInt("mdms.numProcesses")
 
+  val voltLow2  = config.getDouble("mdms.voltLow2")
   val volt_low  = config.getDouble("mdms.volt_low")
   val volt_high = config.getDouble("mdms.volt_high")
-  val volt_nominal = config.getDouble("mdms.volt_nominal")
+  val volt220_nominal = config.getDouble("mdms.volt220_nominal")
+  val volt110_nominal = config.getDouble("mdms.volt110_nominal")
 
   val interactiveMeter = config.getString("mdms.interactive_meter")
   val meterIDs = config.getLongList("mdms.meterids.ids")
@@ -529,6 +531,8 @@ class MLfuncs extends Serializable {
 
     import sqlContext.implicits._
 
+    val volt_nominal = 220.0
+  
     // Initialize Vector
     var hr0vPV = Vectors.dense(0); var hr1vPV = Vectors.dense(0); var hr2vPV = Vectors.dense(0); var hr3vPV = Vectors.dense(0);
     var hr4vPV = Vectors.dense(0); var hr5vPV = Vectors.dense(0); var hr6vPV = Vectors.dense(0); var hr7vPV = Vectors.dense(0);
@@ -675,7 +679,7 @@ class MLfuncs extends Serializable {
     import sqlContext.implicits._
 
     var pvsdBuckets = pvsdDF.na.drop()
-                        .filter(s"VOLT_C <= $volt_high and VOLT_C >= $volt_low")
+                        .filter(s"VOLT_C <= $volt_high and VOLT_C >= $voltLow2")
                         .withColumn("bucket", pmod($"DTI", lit(96)))
                         .select("ID", "TS", "VOLT_C", "POWER", "DTI", "SDTI", "Season", "Daytype", "bucket") 
 
@@ -706,17 +710,6 @@ class MLfuncs extends Serializable {
    */
   def getFeatureVector(sc: SparkContext, arrfp: Array[Row], arrfv: Array[Row], id: Long, se: Int, dt: Int) = {
 
-    // Retrieve readings from array of Row given id, se, dt
-    var fpi = for {
-      r <- arrfp 
-      if (r.getDecimal(0).longValue == id && r(2) == se && r(3) == dt ) 
-    } yield {r.getDecimal(4).doubleValue}
-
-    var fvi = for {
-      r <- arrfv 
-      if (r.getDecimal(0).longValue == id && r(2) == se && r(3) == dt ) 
-    } yield {r.getDecimal(4).doubleValue}
-
     // Initialize Vector
     var hr0vPV = Vectors.dense(0); var hr1vPV = Vectors.dense(0); var hr2vPV = Vectors.dense(0); var hr3vPV = Vectors.dense(0);
     var hr4vPV = Vectors.dense(0); var hr5vPV = Vectors.dense(0); var hr6vPV = Vectors.dense(0); var hr7vPV = Vectors.dense(0);
@@ -725,94 +718,112 @@ class MLfuncs extends Serializable {
     var hr16vPV = Vectors.dense(0); var hr17vPV = Vectors.dense(0); var hr18vPV = Vectors.dense(0); var hr19vPV = Vectors.dense(0);
     var hr20vPV = Vectors.dense(0); var hr21vPV = Vectors.dense(0); var hr22vPV = Vectors.dense(0); var hr23vPV = Vectors.dense(0);
 
-    // Preparing feature vector of N features per hour for each hour (total 24 hours)
-    // Generate dense Vector for each hour, containing feature vector of power features and voltage features
 
-    if (fpi.size == 96) {
-      hr0vPV = Vectors.dense(Array(fpi(1), fvi(1)/volt_nominal))
-      hr1vPV = Vectors.dense(Array(fpi(5), fvi(5)/volt_nominal))
-      hr2vPV = Vectors.dense(Array(fpi(9), fvi(9)/volt_nominal))
-      hr3vPV = Vectors.dense(Array(fpi(13), fvi(13)/volt_nominal))
-      hr4vPV = Vectors.dense(Array(fpi(17), fvi(17)/volt_nominal))
-      hr5vPV = Vectors.dense(Array(fpi(21), fvi(21)/volt_nominal))
-      hr6vPV = Vectors.dense(Array(fpi(25), fvi(25)/volt_nominal))
-      hr7vPV = Vectors.dense(Array(fpi(29), fvi(29)/volt_nominal))
-      hr8vPV = Vectors.dense(Array(fpi(33), fvi(33)/volt_nominal))
-      hr9vPV = Vectors.dense(Array(fpi(37), fvi(37)/volt_nominal))
-      hr10vPV = Vectors.dense(Array(fpi(41), fvi(41)/volt_nominal))
-      hr11vPV = Vectors.dense(Array(fpi(45), fvi(45)/volt_nominal))
-      hr12vPV = Vectors.dense(Array(fpi(49), fvi(49)/volt_nominal))
-      hr13vPV = Vectors.dense(Array(fpi(53), fvi(53)/volt_nominal))
-      hr14vPV = Vectors.dense(Array(fpi(57), fvi(57)/volt_nominal))
-      hr15vPV = Vectors.dense(Array(fpi(61), fvi(61)/volt_nominal))
-      hr16vPV = Vectors.dense(Array(fpi(65), fvi(65)/volt_nominal))
-      hr17vPV = Vectors.dense(Array(fpi(69), fvi(69)/volt_nominal))
-      hr18vPV = Vectors.dense(Array(fpi(73), fvi(73)/volt_nominal))
-      hr19vPV = Vectors.dense(Array(fpi(77), fvi(77)/volt_nominal))
-      hr20vPV = Vectors.dense(Array(fpi(81), fvi(81)/volt_nominal))
-      hr21vPV = Vectors.dense(Array(fpi(85), fvi(85)/volt_nominal))
-      hr22vPV = Vectors.dense(Array(fpi(89), fvi(89)/volt_nominal))
-      hr23vPV = Vectors.dense(Array(fpi(93), fvi(93)/volt_nominal))
-    }
-    else if (fpi.size == 48) {
-      hr0vPV = Vectors.dense(Array(fpi(1), fvi(1)/volt_nominal))
-      hr1vPV = Vectors.dense(Array(fpi(3), fvi(3)/volt_nominal))
-      hr2vPV = Vectors.dense(Array(fpi(5), fvi(5)/volt_nominal))
-      hr3vPV = Vectors.dense(Array(fpi(7), fvi(7)/volt_nominal))
-      hr4vPV = Vectors.dense(Array(fpi(9), fvi(9)/volt_nominal))
-      hr5vPV = Vectors.dense(Array(fpi(11), fvi(11)/volt_nominal))
-      hr6vPV = Vectors.dense(Array(fpi(13), fvi(13)/volt_nominal))
-      hr7vPV = Vectors.dense(Array(fpi(15), fvi(15)/volt_nominal))
-      hr8vPV = Vectors.dense(Array(fpi(17), fvi(17)/volt_nominal))
-      hr9vPV = Vectors.dense(Array(fpi(19), fvi(19)/volt_nominal))
-      hr10vPV = Vectors.dense(Array(fpi(21), fvi(21)/volt_nominal))
-      hr11vPV = Vectors.dense(Array(fpi(23), fvi(23)/volt_nominal))
-      hr12vPV = Vectors.dense(Array(fpi(25), fvi(25)/volt_nominal))
-      hr13vPV = Vectors.dense(Array(fpi(27), fvi(27)/volt_nominal))
-      hr14vPV = Vectors.dense(Array(fpi(29), fvi(29)/volt_nominal))
-      hr15vPV = Vectors.dense(Array(fpi(31), fvi(31)/volt_nominal))
-      hr16vPV = Vectors.dense(Array(fpi(33), fvi(33)/volt_nominal))
-      hr17vPV = Vectors.dense(Array(fpi(35), fvi(35)/volt_nominal))
-      hr18vPV = Vectors.dense(Array(fpi(37), fvi(37)/volt_nominal))
-      hr19vPV = Vectors.dense(Array(fpi(39), fvi(39)/volt_nominal))
-      hr20vPV = Vectors.dense(Array(fpi(41), fvi(41)/volt_nominal))
-      hr21vPV = Vectors.dense(Array(fpi(43), fvi(43)/volt_nominal))
-      hr22vPV = Vectors.dense(Array(fpi(45), fvi(45)/volt_nominal))
-      hr23vPV = Vectors.dense(Array(fpi(47), fvi(47)/volt_nominal))
+    // Retrieve readings from array of Row given id, se, dt
+    var fpi = for {
+      r <- arrfp 
+      if (r.getDecimal(0).longValue == id && r(2) == se && r(3) == dt ) 
+    } yield {r.getDecimal(4).doubleValue}
 
-      // log.info(s"Found datapoints 48 in : $id, $se, $dt")
-      println(s"Found  datapoints 48 in: $id, $se, $dt")
-    }
-    else if (fpi.size == 24) {
-      hr0vPV = Vectors.dense(Array(fpi(0), fvi(0)/volt_nominal))
-      hr1vPV = Vectors.dense(Array(fpi(1), fvi(1)/volt_nominal))
-      hr2vPV = Vectors.dense(Array(fpi(2), fvi(2)/volt_nominal))
-      hr3vPV = Vectors.dense(Array(fpi(3), fvi(3)/volt_nominal))
-      hr4vPV = Vectors.dense(Array(fpi(4), fvi(4)/volt_nominal))
-      hr5vPV = Vectors.dense(Array(fpi(5), fvi(5)/volt_nominal))
-      hr6vPV = Vectors.dense(Array(fpi(6), fvi(6)/volt_nominal))
-      hr7vPV = Vectors.dense(Array(fpi(7), fvi(7)/volt_nominal))
-      hr8vPV = Vectors.dense(Array(fpi(8), fvi(8)/volt_nominal))
-      hr9vPV = Vectors.dense(Array(fpi(9), fvi(9)/volt_nominal))
-      hr10vPV = Vectors.dense(Array(fpi(10), fvi(10)/volt_nominal))
-      hr11vPV = Vectors.dense(Array(fpi(11), fvi(11)/volt_nominal))
-      hr12vPV = Vectors.dense(Array(fpi(12), fvi(12)/volt_nominal))
-      hr13vPV = Vectors.dense(Array(fpi(13), fvi(13)/volt_nominal))
-      hr14vPV = Vectors.dense(Array(fpi(14), fvi(14)/volt_nominal))
-      hr15vPV = Vectors.dense(Array(fpi(15), fvi(15)/volt_nominal))
-      hr16vPV = Vectors.dense(Array(fpi(16), fvi(16)/volt_nominal))
-      hr17vPV = Vectors.dense(Array(fpi(17), fvi(17)/volt_nominal))
-      hr18vPV = Vectors.dense(Array(fpi(18), fvi(18)/volt_nominal))
-      hr19vPV = Vectors.dense(Array(fpi(19), fvi(19)/volt_nominal))
-      hr20vPV = Vectors.dense(Array(fpi(20), fvi(20)/volt_nominal))
-      hr21vPV = Vectors.dense(Array(fpi(21), fvi(21)/volt_nominal))
-      hr22vPV = Vectors.dense(Array(fpi(22), fvi(22)/volt_nominal))
-      hr23vPV = Vectors.dense(Array(fpi(23), fvi(23)/volt_nominal))
-    }
-    else { // irregular data 
-      urdata += Row(id, se, dt) 
-      //log.info(s"Found irregular data: $id, $se, $dt")
-      println(s"Found irregular data: $id, $se, $dt")
+    if (fpi.size > 0) {
+      var fvi = for {
+        r <- arrfv 
+        if (r.getDecimal(0).longValue == id && r(2) == se && r(3) == dt ) 
+      } yield {r.getDecimal(4).doubleValue}
+
+      // Preparing feature vector of N features per hour for each hour (total 24 hours)
+      // Generate dense Vector for each hour, containing feature vector of power features and voltage features
+
+      var volt_nominal = volt220_nominal
+      if (fvi(1) < volt_low) 
+        volt_nominal = volt110_nominal
+
+      if (fpi.size == 96) {
+        hr0vPV = Vectors.dense(Array(fpi(1), fvi(1)/volt_nominal))
+        hr1vPV = Vectors.dense(Array(fpi(5), fvi(5)/volt_nominal))
+        hr2vPV = Vectors.dense(Array(fpi(9), fvi(9)/volt_nominal))
+        hr3vPV = Vectors.dense(Array(fpi(13), fvi(13)/volt_nominal))
+        hr4vPV = Vectors.dense(Array(fpi(17), fvi(17)/volt_nominal))
+        hr5vPV = Vectors.dense(Array(fpi(21), fvi(21)/volt_nominal))
+        hr6vPV = Vectors.dense(Array(fpi(25), fvi(25)/volt_nominal))
+        hr7vPV = Vectors.dense(Array(fpi(29), fvi(29)/volt_nominal))
+        hr8vPV = Vectors.dense(Array(fpi(33), fvi(33)/volt_nominal))
+        hr9vPV = Vectors.dense(Array(fpi(37), fvi(37)/volt_nominal))
+        hr10vPV = Vectors.dense(Array(fpi(41), fvi(41)/volt_nominal))
+        hr11vPV = Vectors.dense(Array(fpi(45), fvi(45)/volt_nominal))
+        hr12vPV = Vectors.dense(Array(fpi(49), fvi(49)/volt_nominal))
+        hr13vPV = Vectors.dense(Array(fpi(53), fvi(53)/volt_nominal))
+        hr14vPV = Vectors.dense(Array(fpi(57), fvi(57)/volt_nominal))
+        hr15vPV = Vectors.dense(Array(fpi(61), fvi(61)/volt_nominal))
+        hr16vPV = Vectors.dense(Array(fpi(65), fvi(65)/volt_nominal))
+        hr17vPV = Vectors.dense(Array(fpi(69), fvi(69)/volt_nominal))
+        hr18vPV = Vectors.dense(Array(fpi(73), fvi(73)/volt_nominal))
+        hr19vPV = Vectors.dense(Array(fpi(77), fvi(77)/volt_nominal))
+        hr20vPV = Vectors.dense(Array(fpi(81), fvi(81)/volt_nominal))
+        hr21vPV = Vectors.dense(Array(fpi(85), fvi(85)/volt_nominal))
+        hr22vPV = Vectors.dense(Array(fpi(89), fvi(89)/volt_nominal))
+        hr23vPV = Vectors.dense(Array(fpi(93), fvi(93)/volt_nominal))
+      }
+      else if (fpi.size == 48) {
+        hr0vPV = Vectors.dense(Array(fpi(1), fvi(1)/volt_nominal))
+        hr1vPV = Vectors.dense(Array(fpi(3), fvi(3)/volt_nominal))
+        hr2vPV = Vectors.dense(Array(fpi(5), fvi(5)/volt_nominal))
+        hr3vPV = Vectors.dense(Array(fpi(7), fvi(7)/volt_nominal))
+        hr4vPV = Vectors.dense(Array(fpi(9), fvi(9)/volt_nominal))
+        hr5vPV = Vectors.dense(Array(fpi(11), fvi(11)/volt_nominal))
+        hr6vPV = Vectors.dense(Array(fpi(13), fvi(13)/volt_nominal))
+        hr7vPV = Vectors.dense(Array(fpi(15), fvi(15)/volt_nominal))
+        hr8vPV = Vectors.dense(Array(fpi(17), fvi(17)/volt_nominal))
+        hr9vPV = Vectors.dense(Array(fpi(19), fvi(19)/volt_nominal))
+        hr10vPV = Vectors.dense(Array(fpi(21), fvi(21)/volt_nominal))
+        hr11vPV = Vectors.dense(Array(fpi(23), fvi(23)/volt_nominal))
+        hr12vPV = Vectors.dense(Array(fpi(25), fvi(25)/volt_nominal))
+        hr13vPV = Vectors.dense(Array(fpi(27), fvi(27)/volt_nominal))
+        hr14vPV = Vectors.dense(Array(fpi(29), fvi(29)/volt_nominal))
+        hr15vPV = Vectors.dense(Array(fpi(31), fvi(31)/volt_nominal))
+        hr16vPV = Vectors.dense(Array(fpi(33), fvi(33)/volt_nominal))
+        hr17vPV = Vectors.dense(Array(fpi(35), fvi(35)/volt_nominal))
+        hr18vPV = Vectors.dense(Array(fpi(37), fvi(37)/volt_nominal))
+        hr19vPV = Vectors.dense(Array(fpi(39), fvi(39)/volt_nominal))
+        hr20vPV = Vectors.dense(Array(fpi(41), fvi(41)/volt_nominal))
+        hr21vPV = Vectors.dense(Array(fpi(43), fvi(43)/volt_nominal))
+        hr22vPV = Vectors.dense(Array(fpi(45), fvi(45)/volt_nominal))
+        hr23vPV = Vectors.dense(Array(fpi(47), fvi(47)/volt_nominal))
+
+        // log.info(s"Found datapoints 48 in : $id, $se, $dt")
+        println(s"Found  datapoints 48 in: $id, $se, $dt")
+      }
+      else if (fpi.size == 24) {
+        hr0vPV = Vectors.dense(Array(fpi(0), fvi(0)/volt_nominal))
+        hr1vPV = Vectors.dense(Array(fpi(1), fvi(1)/volt_nominal))
+        hr2vPV = Vectors.dense(Array(fpi(2), fvi(2)/volt_nominal))
+        hr3vPV = Vectors.dense(Array(fpi(3), fvi(3)/volt_nominal))
+        hr4vPV = Vectors.dense(Array(fpi(4), fvi(4)/volt_nominal))
+        hr5vPV = Vectors.dense(Array(fpi(5), fvi(5)/volt_nominal))
+        hr6vPV = Vectors.dense(Array(fpi(6), fvi(6)/volt_nominal))
+        hr7vPV = Vectors.dense(Array(fpi(7), fvi(7)/volt_nominal))
+        hr8vPV = Vectors.dense(Array(fpi(8), fvi(8)/volt_nominal))
+        hr9vPV = Vectors.dense(Array(fpi(9), fvi(9)/volt_nominal))
+        hr10vPV = Vectors.dense(Array(fpi(10), fvi(10)/volt_nominal))
+        hr11vPV = Vectors.dense(Array(fpi(11), fvi(11)/volt_nominal))
+        hr12vPV = Vectors.dense(Array(fpi(12), fvi(12)/volt_nominal))
+        hr13vPV = Vectors.dense(Array(fpi(13), fvi(13)/volt_nominal))
+        hr14vPV = Vectors.dense(Array(fpi(14), fvi(14)/volt_nominal))
+        hr15vPV = Vectors.dense(Array(fpi(15), fvi(15)/volt_nominal))
+        hr16vPV = Vectors.dense(Array(fpi(16), fvi(16)/volt_nominal))
+        hr17vPV = Vectors.dense(Array(fpi(17), fvi(17)/volt_nominal))
+        hr18vPV = Vectors.dense(Array(fpi(18), fvi(18)/volt_nominal))
+        hr19vPV = Vectors.dense(Array(fpi(19), fvi(19)/volt_nominal))
+        hr20vPV = Vectors.dense(Array(fpi(20), fvi(20)/volt_nominal))
+        hr21vPV = Vectors.dense(Array(fpi(21), fvi(21)/volt_nominal))
+        hr22vPV = Vectors.dense(Array(fpi(22), fvi(22)/volt_nominal))
+        hr23vPV = Vectors.dense(Array(fpi(23), fvi(23)/volt_nominal))
+      }
+      else { // irregular data 
+        urdata += Row(id, se, dt) 
+        //log.info(s"Found irregular data: $id, $se, $dt")
+        println(s"Found irregular data: $id, $se, $dt")
+      }
     }
 
     if (fpi.size > 0) {
