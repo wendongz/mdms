@@ -73,7 +73,7 @@ class MLfuncs extends Serializable {
   val tblMIDs = "data_quality.meterids"
 
   // UDF applied to DataFrame columns
-  val toDouble = udf((d: java.math.BigDecimal) => d.toString.toDouble)
+  val toDouble = udf((d: java.math.BigDecimal) => d.doubleValue)
 
   // Initialize hourgroup Map
   var hgMap = scala.collection.mutable.Map[(Long, Int, Int, Long),Int]()
@@ -709,13 +709,13 @@ class MLfuncs extends Serializable {
     // Retrieve readings from array of Row given id, se, dt
     var fpi = for {
       r <- arrfp 
-      if (r.getDecimal(0).toString.toLong == id && r(2) == se && r(3) == dt ) 
-    } yield {r.getDecimal(4).toString.toDouble}
+      if (r.getDecimal(0).longValue == id && r(2) == se && r(3) == dt ) 
+    } yield {r.getDecimal(4).doubleValue}
 
     var fvi = for {
       r <- arrfv 
-      if (r.getDecimal(0).toString.toLong == id && r(2) == se && r(3) == dt ) 
-    } yield {r.getDecimal(4).toString.toDouble}
+      if (r.getDecimal(0).longValue == id && r(2) == se && r(3) == dt ) 
+    } yield {r.getDecimal(4).doubleValue}
 
     // Initialize Vector
     var hr0vPV = Vectors.dense(0); var hr1vPV = Vectors.dense(0); var hr2vPV = Vectors.dense(0); var hr3vPV = Vectors.dense(0);
