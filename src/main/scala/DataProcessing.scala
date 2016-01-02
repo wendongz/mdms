@@ -769,7 +769,7 @@ class DataProcessing extends Serializable {
    *      -find outgage data
    *      -populate basereading table
    */
-  def curProcessing(sc: SparkContext, sqlContext: SQLContext, curDF: DataFrame, rdtyMap: scala.collection.mutable.Map[String, Long]) {
+  def curProcessing(sc: SparkContext, sqlContext: SQLContext, curDF: DataFrame, rdtyMap: scala.collection.mutable.Map[String, Long]): DataFrame = {
    
     // Convert all current data of 96 columns to rows
     val cDF = convCol2RowCur(sqlContext, curDF) //.sort("ID", "DTI", "PHASE_FLAG")
@@ -778,6 +778,7 @@ class DataProcessing extends Serializable {
     if (runmode == 2) // Populate SGDM tables
       popBasereading(sqlContext, cDF, "A", rdtyMap)
 
+    cDF
   }
 
   /**
@@ -786,7 +787,7 @@ class DataProcessing extends Serializable {
    *      -find low power factor 
    *      -populate basereading table
    */
-  def pfProcessing(sc: SparkContext, sqlContext: SQLContext, pfDF: DataFrame, rdtyMap: scala.collection.mutable.Map[String, Long]) {
+  def pfProcessing(sc: SparkContext, sqlContext: SQLContext, pfDF: DataFrame, rdtyMap: scala.collection.mutable.Map[String, Long]): DataFrame = {
    
     // Convert all power factor data of 96 columns to rows
     val pftDF = convCol2RowPF(sqlContext, pfDF) //.sort("ID", "DTI", "PHASE_FLAG")
@@ -795,6 +796,7 @@ class DataProcessing extends Serializable {
     if (runmode == 2) // Populate SGDM tables
       popBasereading(sqlContext, pftDF, "PF", rdtyMap)
 
+    pftDF
   }
 
   /**
@@ -802,7 +804,7 @@ class DataProcessing extends Serializable {
    *      -find missing and null values;
    *      -populate basereading table
    */
-  def enerProcessing(sc: SparkContext, sqlContext: SQLContext, readDF: DataFrame, rdtyMap: scala.collection.mutable.Map[String, Long]) {
+  def enerProcessing(sc: SparkContext, sqlContext: SQLContext, readDF: DataFrame, rdtyMap: scala.collection.mutable.Map[String, Long]): DataFrame = {
    
     // Convert all power data of 96 columns to rows
     val enerDF = convCol2RowE(sqlContext, readDF)
@@ -811,6 +813,7 @@ class DataProcessing extends Serializable {
     if (runmode == 2) // Populate SGDM tables
       popBasereading(sqlContext, enerDF, "E", rdtyMap)
 
+    enerDF
   }
 
   /**
@@ -1452,6 +1455,100 @@ class DataProcessing extends Serializable {
                                        "Residential-Summer-Weekday", "Residential-Summer-Weekend", "Residential-Summer-Holiday",
                                        "Residential-Fall-Weekday",   "Residential-Fall-Weekend",   "Residential-Fall-Holiday",
                                        "Residential-Winter-Weekday", "Residential-Winter-Weekend", "Residential-Winter-Holiday")  
+
+  }
+
+  /**
+   * Compute PV and QV curves.
+   * Data contains load types, and seasonal day types.
+   * - Input:
+   *          sc: SparkContext
+   *          sqlContext: SQLContext
+   *          vfDF: DataFrame - voltage data
+   *          pwrDF: DataFrame - power data
+   *          cjccDF: DataFrame - item description data from CJ_CC table
+   * - Return:
+   *          Tuple-2 of pv and qv curve data
+   */
+  def PQVCF(sc: SparkContext, sqlContext: SQLContext, vfDF: DataFrame, pwrDF: DataFrame, cDF: DataFrame, factorDF: DataFrame, enerDF: DataFrame) = {
+
+    import sqlContext.implicits._
+
+    // Convert rows of power into 3 phases P and Q
+    pwrDF.registerTempTable("PWRDF")   
+    //sqlContext.cacheTable("PWRDF")
+    val pallDF = sqlContext.sql("""SELECT ID, TS, DTI, max(PSUM) as PSUM, max(PA) as PA, max(PB) as PB, max(PC) as PC,
+                             max(QSUM) as QSUM, max(QA) as QA, max(QB) as QB, max(QC) as QC
+                       FROM (select ID, TS, DTI,
+                                 CASE WHEN DATA_TYPE = 1 THEN POWER  END PSUM,
+                                 CASE WHEN DATA_TYPE = 2 THEN POWER  END PA,
+                                 CASE WHEN DATA_TYPE = 3 THEN POWER  END PB,
+                                 CASE WHEN DATA_TYPE = 4 THEN POWER  END PC,
+                                 CASE WHEN DATA_TYPE = 5 THEN POWER  END QSUM,
+                                 CASE WHEN DATA_TYPE = 6 THEN POWER  END QA,
+                                 CASE WHEN DATA_TYPE = 7 THEN POWER  END QB,
+                                 CASE WHEN DATA_TYPE = 8 THEN POWER  END QC
+                            from PWRDF) pdf
+                       GROUP BY ID, TS, DTI""").cache()
+    
+
+    // build V, P, Q and 3 phases dataframe
+    val pvallDF = pallDF.as('pall).join(vfDF.as('vall),  vfDF("ID") === pallDF("ID") && vfDF("DTI") === pallDF("DTI"), "inner")
+                        .select($"pall.ID", $"pall.TS", $"pall.DTI", $"vall.VOLT_A", $"vall.VOLT_B", $"vall.VOLT_C", 
+                                $"pall.PSUM", $"pall.PA", $"pall.PB", $"pall.PC", $"pall.QSUM", $"pall.QA", $"pall.QB", $"pall.QC").cache()
+ 
+    pvallDF.count
+
+    // Convert rows of Current into 3 phases
+    cDF.registerTempTable("CDF")
+    val callDF = sqlContext.sql("""SELECT ID, TS, DTI, max(PHASEA) as CUR_A, max(PHASEB) as CUR_B, max(PHASEC) as CUR_C
+                    FROM (select ID, TS, DTI,
+                                 CASE WHEN PHASE_FLAG = 1 THEN CUR  END PHASEA,
+                                 CASE WHEN PHASE_FLAG = 2 THEN CUR  END PHASEB,
+                                 CASE WHEN PHASE_FLAG = 3 THEN CUR  END PHASEC
+                          from CDF) cdf
+                    GROUP BY ID, TS, DTI""").cache()
+    callDF.count 
+
+    // build V, C, P, Q and 3 phases dataframe
+    val pvcallDF = pvallDF.as('pvall).join(callDF.as('call), callDF("ID") === pvallDF("ID") && callDF("DTI") === pvallDF("DTI"), "inner")
+                          .select($"pvall.ID", $"pvall.TS", $"pvall.DTI", $"pvall.VOLT_A", $"pvall.VOLT_B", $"pvall.VOLT_C", $"call.CUR_A", $"call.CUR_B", $"call.CUR_C",
+                                  $"pvall.PSUM", $"pvall.PA", $"pvall.PB", $"pvall.PC", $"pvall.QSUM", $"pvall.QA", $"pvall.QB", $"pvall.QC").cache()
+    pvcallDF.count 
+ 
+    // Convert power factor into 3 phases
+    factorDF.registerTempTable("fDF")
+    val f3phDF = sqlContext.sql("""SELECT ID, TS, DTI, max(PFS) as PFSUM, max(PFA) as PF_A, max(PFB) as PF_B, max(PFC) as PF_C
+                    FROM (select ID, TS, DTI,
+                                 CASE WHEN PHASE_FLAG = 0 THEN PF  END PFS,
+                                 CASE WHEN PHASE_FLAG = 1 THEN PF  END PFA,
+                                 CASE WHEN PHASE_FLAG = 2 THEN PF  END PFB,
+                                 CASE WHEN PHASE_FLAG = 3 THEN PF  END PFC
+                          from fDF) fdf
+                    GROUP BY ID, TS, DTI""").cache()
+    f3phDF.count
+
+    // build V, C, f, P, Q and 3 phases dataframe
+    val pvcfallDF= pvcallDF.as('pvc).join(f3phDF.as('pf), f3phDF("ID") === pvcallDF("ID") && f3phDF("DTI") === pvallDF("DTI"), "left")
+                        .select($"pvc.ID", $"pvc.TS", $"pvc.DTI", $"pvc.VOLT_A", $"pvc.VOLT_B", $"pvc.VOLT_C", $"pvc.CUR_A", $"pvc.CUR_B", $"pvc.CUR_C",
+                                $"pvc.PSUM", $"pvc.PA", $"pvc.PB", $"pvc.PC", $"pvc.QSUM", $"pvc.QA", $"pvc.QB", $"pvc.QC",
+                                $"pf.PFSUM", $"pf.PF_A", $"pf.PF_B", $"pf.PF_C")
+                        .filter("VOLT_A > 0 or VOLT_C > 0 or PSUM > 0 or PA > 0 or PC > 0 or CUR_A > 0 or CUR_C > 0 ")
+                        .cache()
+    pvcfallDF.count
+
+    val numProcesses2 = numProcesses*2
+    
+    if (runmode == 4)
+      pvcfallDF.coalesce(numProcesses2).write.jdbc(tgturl, "data_quality.pqvcf", new java.util.Properties)
+
+    // Release cache
+    f3phDF.unpersist
+    callDF.unpersist
+    pallDF.unpersist
+    pvcallDF.unpersist
+    pvallDF.unpersist
+    pallDF.unpersist
 
   }
 
