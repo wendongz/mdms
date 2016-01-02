@@ -133,15 +133,15 @@ object MDM {
     println("Finished powerProcessing.")
 
     // Processing Current data
-    DataProcessing.curProcessing(sc, sqlContext, curDF, rdtyMap)
+    val cDF = DataProcessing.curProcessing(sc, sqlContext, curDF, rdtyMap)
     println("Finished curProcessing.")
 
     // Processing Power Factor data
-    DataProcessing.pfProcessing(sc, sqlContext, pfDF, rdtyMap)
+    val factorDF = DataProcessing.pfProcessing(sc, sqlContext, pfDF, rdtyMap)
     println("Finished pfProcessing.")
 
     // Processing Accumulated Energy data
-    DataProcessing.enerProcessing(sc, sqlContext, readDF, rdtyMap)
+    val enerDF = DataProcessing.enerProcessing(sc, sqlContext, readDF, rdtyMap)
     println("Finished enerProcessing.")
 
     // Populate additional SGDM tables in PostgreSQL (identifiedobject, enddevice, meter, etc.)
@@ -164,6 +164,10 @@ object MDM {
     // Compute PQ/PV curves
     val (pvsdDF, qvsdDF) = DataProcessing.PQVcurves(sc, sqlContext, vfDF, pwrDF, cjccDF)
     println("Finished PQVcurves.")
+
+    // Build dataframe of PQVCF for data cross-validation
+    DataProcessing.PQVCF(sc, sqlContext, vfDF, pwrDF, cDF, factorDF, enerDF)
+    println("Finished PQVCF.")
 
     // Run k-means clustering on PV data
     val hgDF = MLfuncs.kmclust(sc, sqlContext, pwrDF, pvsdDF, qvsdDF, numClusters, numIters, numRuns) 
