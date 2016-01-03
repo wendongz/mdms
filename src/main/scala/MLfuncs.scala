@@ -50,8 +50,11 @@ class MLfuncs extends Serializable {
   val numBucketAP  = config.getInt("mdms.numBucketAP")
   val numBucketAP2 = config.getInt("mdms.numBucketAP2")
   val numBucketV   = config.getInt("mdms.numBucketV")
-  val numProcesses = config.getInt("mdms.numProcesses")
+  val minNumPoints = config.getInt("mdms.minNumPoints")
 
+  val numProcesses = config.getInt("mdms.numProcesses")
+  val numClusters = config.getInt("mdms.numClusters")
+   
   val voltLow2  = config.getDouble("mdms.voltLow2")
   val volt_low  = config.getDouble("mdms.volt_low")
   val volt_high = config.getDouble("mdms.volt_high")
@@ -683,6 +686,8 @@ class MLfuncs extends Serializable {
                         .withColumn("bucket", pmod($"DTI", lit(96)))
                         .select("ID", "TS", "VOLT_C", "POWER", "DTI", "SDTI", "Season", "Daytype", "bucket") 
 
+    // Now aggregate timestamps by season and daytype for each meter, for each bucket
+
     // P feature
     var featureP = pvsdBuckets.groupBy($"ID", $"bucket", $"Season", $"Daytype").agg(avg("POWER")).sort("ID", "bucket", "Season", "Daytype").cache()
     featureP.count //force to be cached
@@ -725,7 +730,7 @@ class MLfuncs extends Serializable {
       if (r.getDecimal(0).longValue == id && r(2) == se && r(3) == dt ) 
     } yield {r.getDecimal(4).doubleValue}
 
-    if (fpi.size > 0) {
+    if (fpi.size >= minNumPoints) {
       var fvi = for {
         r <- arrfv 
         if (r.getDecimal(0).longValue == id && r(2) == se && r(3) == dt ) 
@@ -826,7 +831,7 @@ class MLfuncs extends Serializable {
       }
     }
 
-    if (fpi.size > 0) {
+    if (fpi.size >= minNumPoints) {
       // Create RDD of Vector of Bin frequency for both power and voltage data for training
       var hrpvData = sc.parallelize(Array(hr0vPV, hr1vPV, hr2vPV, hr3vPV, hr4vPV, hr5vPV, hr6vPV, hr7vPV, hr8vPV, hr9vPV, hr10vPV,
                          hr11vPV, hr12vPV, hr13vPV, hr14vPV, hr15vPV, hr16vPV, hr17vPV, hr18vPV, hr19vPV, hr20vPV,
@@ -883,7 +888,7 @@ class MLfuncs extends Serializable {
      */
     var clustersLSDOpt: Option[KMeansModel] = None
     var pvhgmRDDOpt: Option[RDD[(Int, Iterable[Long])]] = None
-    var numHourGroup: Int = 6
+    var numHourGroup: Int = numClusters
     var ids = Array(0L)
    
     val schemaMid = StructType(StructField("id", LongType) ::
