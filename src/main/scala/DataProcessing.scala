@@ -1459,16 +1459,17 @@ class DataProcessing extends Serializable {
   }
 
   /**
-   * Compute PV and QV curves.
-   * Data contains load types, and seasonal day types.
+   * Build DataFrame of PQVCF for data cross-validation.
    * - Input:
    *          sc: SparkContext
    *          sqlContext: SQLContext
-   *          vfDF: DataFrame - voltage data
-   *          pwrDF: DataFrame - power data
-   *          cjccDF: DataFrame - item description data from CJ_CC table
+   *          vfDF: DataFrame - Voltage data
+   *          pwrDF: DataFrame - Power data
+   *          cDF: DataFrame - Current data
+   *          factorDF: DataFrame - Power Factor data
+   *          enerDF: DataFrame - Energy Read data
    * - Return:
-   *          Tuple-2 of pv and qv curve data
+   *          
    */
   def PQVCF(sc: SparkContext, sqlContext: SQLContext, vfDF: DataFrame, pwrDF: DataFrame, cDF: DataFrame, factorDF: DataFrame, enerDF: DataFrame) = {
 
