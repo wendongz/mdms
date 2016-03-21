@@ -4,6 +4,10 @@ This is the Meter Data Management system implemented in Spark with Scala. It ass
 
 You can browse source code by clicking "Source" on the left side Navigation Menu, and then src -> main/scala/.
 
+In the file build.sbt, check your sparkVersion and scalaVersion, as well as component versions. 
+
+Before running the Spark application, please set up Spark cluster. Also review and modify the configuration parameters in MDM/src/main/resources/application.conf. 
+
 ### What is this repository for? ###
 
 * Quick summary
