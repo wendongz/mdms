@@ -988,7 +988,7 @@ class MLfuncs extends Serializable {
 
     val urdataDF = sqlContext.createDataFrame(urdataRDD, schemaurdata) 
 
-    if (runmode == 1) { // machine learning mode 
+    if (runmode == 1) {  
       hgDF.coalesce(numProcesses).write.mode("append").jdbc(tgturl, pgHourGroup, new java.util.Properties)
       urdataDF.coalesce(numProcesses).write.mode("append").jdbc(tgturl, "data_quality.urdata", new java.util.Properties)
       println("Finished writing to hourgroup...")   
@@ -1049,7 +1049,7 @@ class MLfuncs extends Serializable {
 
     val numProcesses2 = numProcesses * 2
 
-    if (runmode == 1) { // machine learning mode
+    if (runmode == 1) { 
       pvsdhg.coalesce(numProcesses2).write.mode("overwrite").jdbc(tgturl, pgpvsdhg2, new java.util.Properties)
       qvsdhg.coalesce(numProcesses2).write.mode("overwrite").jdbc(tgturl, qgpvsdhg2, new java.util.Properties)
       println("Finished writing to pvsdhg2...")
