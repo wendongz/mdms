@@ -2,7 +2,9 @@
 //---- Convert Postgres data of Gridlab-D into Oracle Real Meter format; and prepare ML -----------
 //-------------------------------------------------------------------------------------------------  
 
-import org.apache.spark._
+
+// ./bin/spark-submit --class "ConvSim2SM" --master spark://data5:7077  /home/admin/apps/MDM_7Jun2016/target/scala-2.11/mdm_2.11-1.0.jar
+
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql._
 import org.apache.spark.sql.SQLContext
@@ -31,7 +33,7 @@ import org.apache.spark.mllib.stat.{MultivariateStatisticalSummary, Statistics}
 import org.apache.commons.math3.fitting.PolynomialCurveFitter
 import org.apache.commons.math3.fitting.WeightedObservedPoints
 
-Object ConvSim2SM {
+object ConvSim2SM {
 
   val mdmHome = scala.util.Properties.envOrElse("MDM_HOME", "MDM/")
   val config = ConfigFactory.parseFile(new File(mdmHome + "src/main/resources/application.conf"))
@@ -168,18 +170,25 @@ def main(args: Array[String]) {
     
     // Load tables from database (here is PostgreSQL) into DataFrame
     //val brDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "basereading"))
-    val brDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "basereading", "partitionColumn" -> "timeperiod", "lowerBound" -> "2", "upperBound" -> "35037", "numPartitions" -> "100"))
-    val brS1DF = brDF.filter(s"meter >= $meterStartNumber and meter <= $meterEndNumber").cache 
+  val brDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "basereading", "partitionColumn" -> "timeperiod", "lowerBound" ->"2", "upperBound" -> "35037", "numPartitions" -> "100"))
+    val meterDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "meter")).cache
+    val rdtyDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "readingtype")).cache
+    val mskDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "measurementkind")).cache
+    val dtitv = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "datetimeinterval")).cache
+    val phaseDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "phase")).cache
+    val idoDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "identifiedobject")).cache
     
-    val idoDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "identifiedobject"))
-    val meterDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "meter"))
-    val meterS1DF = meterDF.filter(s"meterid >= $meterStartNumber and meterid <= $meterEndNumber").cache
-    
-    val rdtyDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "readingtype"))
-    val mskDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "measurementkind"))
-    val dtitv = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "datetimeinterval"))
-    val phaseDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "phase")).cache 
-    
+    meterDF.count
+    rdtyDF.count
+    mskDF.count
+    dtitv.count
+    phaseDF.count
+    idoDF.count
+	
+    val brS1DF = brDF.filter(s"meter >= $meterStartNumber and meter <= $meterEndNumber").cache
+//.filter(s"timeperiod >= 20000 and timeperiod < 27000").cache 
+	val meterS1DF = meterDF.filter(s"meterid >= $meterStartNumber and meterid <= $meterEndNumber").cache
+	
     brS1DF.count
     meterS1DF.count
     phaseDF.count
@@ -188,14 +197,14 @@ def main(args: Array[String]) {
     val idoM = idoDF.as('ido).join(meterS1DF.as('m), $"ido.identifiedobjectid" === $"m.meterid").select($"ido.identifiedobjectid" as 'idoid)
 
     // identifiedobject join meter join basereading
-    val mrDF = idoM.as('idom).join(brS1DF.as('br), $"idom.idoid" === $"br.meter").select($"br.meter" as 'meterid, $"br.timeperiod", $"br.readingtype", $"br.value").cache 
+    val mrDF = brS1DF.as('br).join(broadcast(idoM).as('idom), $"idom.idoid" === $"br.meter").select($"br.meter" as 'meterid, $"br.timeperiod", $"br.readingtype", $"br.value").cache 
     mrDF.count
     
     // then join readingtype
-    val mrtDF = mrDF.as('mr).join(rdtyDF.as('rdt), $"mr.readingtype" === $"rdt.readingtypeid").select($"mr.meterid", $"mr.timeperiod", $"mr.readingtype", $"mr.value", $"rdt.tou", $"rdt.measurementkind" as 'mesk, $"rdt.phases")
+    val mrtDF = mrDF.as('mr).join(broadcast(rdtyDF).as('rdt), $"mr.readingtype" === $"rdt.readingtypeid").select($"mr.meterid", $"mr.timeperiod", $"mr.readingtype", $"mr.value", $"rdt.tou", $"rdt.measurementkind" as 'mesk, $"rdt.phases")
 
     // then join measurementkind
-    val mrtmDF = mrtDF.as('mrt).join(mskDF.as('msk), $"mrt.mesk" === $"msk.measurementkindid").select($"mrt.meterid", $"mrt.timeperiod" as 'timepd, $"mrt.readingtype" as 'rdty, $"mrt.value" as 'value, $"mrt.tou", $"mrt.phases", $"msk.measurementkindid" as 'meskid, $"msk.code" as 'code).orderBy("meterid").cache
+    val mrtmDF = mrtDF.as('mrt).join(broadcast(mskDF).as('msk), $"mrt.mesk" === $"msk.measurementkindid").select($"mrt.meterid", $"mrt.timeperiod" as 'timepd, $"mrt.readingtype" as 'rdty, $"mrt.value" as 'value, $"mrt.tou", $"mrt.phases", $"msk.measurementkindid" as 'meskid, $"msk.code" as 'code).orderBy("meterid").cache
     mrtmDF.count  // OK
     mrDF.unpersist
     
@@ -208,7 +217,7 @@ def main(args: Array[String]) {
     
     // then join DATETIMEINTERVAL
     // Don't cache yet; may have filter later
-    val mrtmphdt = mrtmphDF.as('mrtmph).join(dtitv as('dtitv), $"mrtmph.timepd" === $"dtitv.datetimeintervalid").select("meterid", "timepd", "rdty", "value", "tou", "phases", "meskid", "code", "datetimeintervalid", "end").cache 
+    val mrtmphdt = mrtmphDF.as('mrtmph).join(broadcast(dtitv) as('dtitv), $"mrtmph.timepd" === $"dtitv.datetimeintervalid").select("meterid", "timepd", "rdty", "value", "tou", "phases", "meskid", "code", "datetimeintervalid", "end").cache 
     mrtmphdt.count
     mrtmDF.unpersist
     
@@ -219,9 +228,16 @@ def main(args: Array[String]) {
     mrdsDF.count
     mrtmphdt.unpersist
     
+    meterDF.unpersist
+    rdtyDF.unpersist
+    mskDF.unpersist
+    dtitv.unpersist
+    phaseDF.unpersist
+    idoDF.unpersist
+    
     val prop = new java.util.Properties
     prop.setProperty("batchsize", "10000000") // 10M batchsize
-    mrdsDF.coalesce(2*numProcesses).write.mode("append").jdbc(tgturl, "data_quality.mrdsum2", prop)
+    //mrdsDF.coalesce(2*numProcesses).write.mode("append").jdbc(tgturl, "data_quality.mrdsum2", prop)
 
     // write to real meter data format (96 columns)
     
