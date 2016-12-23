@@ -169,15 +169,10 @@ object MDM {
     DataProcessing.PQVCF(sc, sqlContext, vfDF, pwrDF, cDF, factorDF, enerDF)
     println("Finished PQVCF.")
 
-    // Run k-means clustering on PV data
-    val hgDF = MLfuncs.kmclust(sc, sqlContext, pwrDF, pvsdDF, qvsdDF, numClusters, numIters, numRuns) 
-
-    // Clustering all meter data using Seasonal and Daytype into Hour Groups
-    //MLfuncs.hourGroupPQV(sc, sqlContext, pvsdDF, qvsdDF, hgDF, arrHGOpt)
-    MLfuncs.meterHG(sqlContext, pvsdDF, qvsdDF)
-
+    // Load modeling using k-means moved into a seperate program
   }
 }
+
 
 /** Lazily instantiated singleton instance of SQLContext */
 
