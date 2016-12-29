@@ -221,7 +221,7 @@ class DataProcessing extends Serializable {
    */
   def voltProcessing(sc: SparkContext, sqlContext: SQLContext, voltDF: DataFrame, rdtyMap: scala.collection.mutable.Map[String, Long]) = {
 
-    import sqlContext.implicits._
+    import sqlContext.implicits._ 
 
     // Convert Voltage 96 columns to rows
     val vDF = convCol2RowV(sqlContext, voltDF).sort("ID", "DTI", "PHASE_FLAG").cache()
