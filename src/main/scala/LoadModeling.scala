@@ -1,11 +1,14 @@
 import org.apache.spark.serializer.{ KryoSerializer => SparkKryoSerializer }
+
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql._
 import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql.hive.HiveContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.sql.Row
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.functions.udf
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types._
 import java.text.SimpleDateFormat
@@ -28,16 +31,19 @@ import org.apache.spark.mllib.stat.{MultivariateStatisticalSummary, Statistics}
 import org.apache.commons.math3.fitting.PolynomialCurveFitter
 import org.apache.commons.math3.fitting.WeightedObservedPoints
 
+//import shark.execution.serialization.KryoSerializationWrapper
+
 object LoadModeling {
 
   val mdmHome = scala.util.Properties.envOrElse("MDM_HOME", "MDM/")
   val config = ConfigFactory.parseFile(new File(mdmHome + "src/main/resources/application.conf"))
   val numProcesses = config.getInt("mdms.numProcesses")
-  val runmode = config.getInt("mdms.runmode")
+  println(s"numProcesses=$numProcesses")
 
-  //Overwrite srcurl & tgturl from application.conf
-  val srcurl = "jdbc:postgresql://192.168.5.2:5433/sgdm_for_etl?user=wendong&password=wendong"
-  val tgturl = srcurl
+  val runmode = config.getInt("mdms.runmode")
+  //val srcurl = "jdbc:postgresql://192.168.5.2:5433/sgdm_for_etl?user=wendong&password=wendong"
+  val tgturl = config.getString("mdms.tgturl")
+  val srcurl = tgturl
 
   val numClusters = config.getInt("mdms.numClusters")
   val numIters = config.getInt("mdms.numIters")
@@ -60,6 +66,11 @@ object LoadModeling {
   
   val interactiveMeter = config.getString("mdms.interactive_meter")
   val meterIDs = config.getLongList("mdms.meterids.ids")
+
+  val partitionLB =  config.getString("mdms.partitionLB") // partition Lower Bound
+  val partitionUB =  config.getString("mdms.partitionUB") // partition Upper Bound
+  val numPartitions =  config.getString("mdms.numPartitions") // number of partitions for loading data
+  val partCol = config.getString("mdms.partCol") // partition column 
 
   val pgHourGroup = "data_quality.hourgroup"
   val pgPVHG = "data_quality.pvhg"
@@ -87,6 +98,7 @@ object LoadModeling {
   val pgmeter = "meter"
   val pgpvcurve = "data_quality.pvcurve"
   val pgqvcurve = "data_quality.qvcurve"
+
   val tblMIDs = "data_quality.meterids"
 
 def main(args: Array[String]) {
@@ -95,16 +107,40 @@ def main(args: Array[String]) {
 
   val sc = new SparkContext(sparkConf)
   val sqlContext = new SQLContext(sc)
+  //val sqlContext = new HiveContext(sc)
 
   import sqlContext.implicits._
 
   val toIntg2 = udf((d: java.math.BigDecimal) => d.toString.replaceAll("""\.0+$""", "").toInt)
   val toLong2 = udf((d: java.math.BigDecimal) => d.toString.replaceAll("""\.0+$""", "").toLong)
   val toDecimal = udf((d: Int) => scala.math.BigDecimal(d))
-   
-  val pvsdDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "data_quality.pvsd", "partitionColumn" -> "dti", "lowerBound" -> "244993", "upperBound" -> "280032", "numPartitions" -> "100")).cache
-  val qvsdDF = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "data_quality.qvsd", "partitionColumn" -> "dti", "lowerBound" -> "244993", "upperBound" -> "280032", "numPartitions" -> "100")).cache
+
+  var hgMap = scala.collection.mutable.Map[(Long, Int, Int, Long),Int]()
+
+  def getHG(id: Long, se: Int, dy: Int, hi: Long): Int = {
+    hgMap.getOrElse((id, se, dy, hi), -1)
+  }
+
+  def conv2HG(id: Long, dti: Long, se: Int, dy: Int): Int = {
+    var hi = (dti-1) % 96L / 4
+    val hg = getHG(id, se, dy, hi)
+    return hg
+  }
+
+  //val toHG = udf(conv2HG(_: Long, _: Long, _: Int, _: Int)) //for some reason, this not works, so we create udf directly.
+  val toHG = udf {(id: Long, dti: Long, se: Int, dy: Int) =>
+                     var hi = (dti-1) % 96L / 4
+                     hgMap.getOrElse((id, se, dy, hi), -1) 
+                 } 
+
+  /**
+   * Loading data
+   */
+  val pvsdDF = sqlContext.read.format("jdbc").option("url", srcurl).option("dbtable", pgpvcurve).option("partitionColumn", partCol).option("lowerBound", partitionLB).option("upperBound", partitionUB).option("numPartitions", numPartitions).load().cache
+  val qvsdDF = sqlContext.read.format("jdbc").option("url", srcurl).option("dbtable", pgqvcurve).option("partitionColumn", partCol).option("lowerBound", partitionLB).option("upperBound", partitionUB).option("numPartitions", numPartitions).load().cache
   //val id_match = sqlContext.load("jdbc", Map("url" -> srcurl, "dbtable" -> "id_match")).cache
+  pvsdDF.count
+  qvsdDF.count
    
   var urdataMap =  scala.collection.mutable.Map[(Long, Int, Int),Int]()
   var urdata = new ArrayBuffer[Row @unchecked]()
@@ -112,6 +148,7 @@ def main(args: Array[String]) {
   // Lower case column name (Postgresql)
   // function to define PV features
   def get24HoursPVFAll(sc: SparkContext, sqlContext: SQLContext, pvsdDF: DataFrame, qvsdDF: DataFrame) = {
+
     import sqlContext.implicits._
     var pvsdBuckets = pvsdDF.na.drop()
                         .filter(s"volt_c <= $volt_high and volt_c >= $voltLow2")
@@ -199,29 +236,27 @@ def main(args: Array[String]) {
 
   //** END K-MEANS BLOCK **//
 
-  var hgMap = scala.collection.mutable.Map[(Long, Int, Int, Long),Int]()
 
   // Get arrays of PV feature Vector; Also populate tblMIDs
   val (arrfp, arrfv) = get24HoursPVFAll(sc, sqlContext, pvsdDF, qvsdDF)
 
-    //var hgMap = scala.collection.mutable.Map[(Long, Int, Int, Long),Int]()
     var arrHrPVRDD = new ArrayBuffer[RDD[(Vector, Long)]]()
     var arrKMMOpt  = new ArrayBuffer[Option[KMeansModel]]()
     var arrHGOpt = new ArrayBuffer[Option[RDD[(Int, Iterable[Long])]]]()
+    //var arrHGRow = new ArrayBuffer[Row]()
 
     var clustersLSDOpt: Option[KMeansModel] = None
     var pvhgmRDDOpt: Option[RDD[(Int, Iterable[Long])]] = None
-    var numHourGroup: Int = 6
  
     //Read the meter id list 
-    val midDF = sqlContext.load("jdbc", Map("url" -> tgturl, "dbtable" -> "data_quality.meterids")) 
+    val midDF = sqlContext.load("jdbc", Map("url" -> tgturl, "dbtable" -> "(select meterid from meter) id")) 
     //val midDF = sqlContext.load("jdbc", Map("url" -> tgturl, "dbtable" -> "id_match")) 
      
     //val meterids = midDF.select("ID").rdd.collect 
-    val meterids = midDF.select("id").map(r => r.getDecimal(0).toString.replaceAll("""\.0+$""", "").toLong).collect
-    //val meterids = midDF.select("simid").map(r => r.getInt(0).toString.toLong).collect
+    //val meterids = midDF.select("id").map(r => r.getDecimal(0).toString.replaceAll("""\.0+$""", "").toLong).collect
+    val meterids = midDF.select("meterid").map(r => r.getLong(0)).collect
     
-    var mids = meterids.slice(0, 50) //just pick up some meters for testing 
+    var mids = meterids   // .slice(0, 50) //just pick up some meters for testing 
 
     // modified getFeatureVectors to pass arrfp and arrfv arrays only once
     // used so that mapping k-means is easier, also zips idx, se, and dt 
@@ -423,41 +458,22 @@ def main(args: Array[String]) {
                                    StructField("hourgroup", IntegerType), StructField("hourindex", LongType)))
     var hgDF = sqlContext.createDataFrame(hgRowRDD, schemaHG).sort("ID", "Season", "Daytype", "hourgroup", "hourindex")
 
-    hgDF.coalesce(numProcesses).write.mode("append").jdbc(tgturl, "data_quality.hourgroup_new", new java.util.Properties)
+    hgDF.coalesce(numProcesses).write.mode("overwrite").jdbc(tgturl, "data_quality.hourgroup_test", new java.util.Properties)
 
     val hgarr = hgDF.rdd.collect
+
+    // Build hgMap
     for (r <- hgarr) {
       hgMap += (r.getLong(0), r.getInt(1), r.getInt(2), r.getLong(4)) -> r.getInt(3)
     }
 
-    //get all data
-    def getHG(id: Long, se: Int, dy: Int, hi: Long) = {
-      hgMap.getOrElse((id, se, dy, hi), -1)
-    }
+    // Build P-V/Q-V curve with hourgroup
+    val pvsdhg = pvsdDF.withColumn("hourgroup", toHG(toLong2($"id"), $"dti", $"season", $"daytype"))
+    val qvsdhg = qvsdDF.withColumn("hourgroup", toHG(toLong2($"id"), $"dti", $"season", $"daytype"))
 
-    /**
-     * Function of converting to hourgroup
-     */
-    def conv2HG(id: Long, dti: Long, se: Int, dy: Int) = {
-      var hi = (dti-1) % 96L / 4
-      var hgi = getHG(id, se, dy, hi)
-      hgi
-    }
+    pvsdhg.coalesce(numProcesses*2).write.mode("overwrite").jdbc(tgturl, "data_quality.pvsdhg_test", prop)
+    qvsdhg.coalesce(numProcesses*2).write.mode("overwrite").jdbc(tgturl, "data_quality.qvsdhg_test", prop)
 
-    /**
-     * UDF - User Defined Function of getting hourgroup
-     */
-    val toHG = udf(conv2HG(_: Long, _: Long, _: Int, _: Int))
-    
-    val pvsdLDF = pvsdDF.withColumn("id2", toLong2(pvsdDF("id"))).select("id2", "ts", "volt_c", "power", "dti", "season", "daytype")
-    val qvsdLDF = qvsdDF.withColumn("id2", toLong2(qvsdDF("id"))).select("id2", "ts", "volt_c", "power", "dti", "season", "daytype")
-    val pvsdhg = pvsdLDF.withColumn("hourgroup", toHG(pvsdLDF("id2"), pvsdDF("dti"), pvsdDF("season"), pvsdDF("daytype")))
-    val qvsdhg = qvsdLDF.withColumn("hourgroup", toHG(qvsdLDF("id2"), qvsdDF("dti"), qvsdDF("season"), qvsdDF("daytype")))
-      
-    pvsdhg.coalesce(150).write.mode("overwrite").jdbc(tgturl, "data_quality.pvsdhg_new", prop)
-    qvsdhg.coalesce(150).write.mode("overwrite").jdbc(tgturl, "data_quality.qvsdhg_new", prop)
-
-    //for testing
     hgRowRDD.unpersist()
 
   }
