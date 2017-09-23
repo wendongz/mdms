@@ -15,8 +15,6 @@
  * limitations under the License.
  */
 
-//package org.apache.spark.examples.streaming
-
 import org.apache.spark._
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.SparkContext._
@@ -38,7 +36,7 @@ import mdmutil._
 /**
  * Meter Data Management System
  *
- * This is a simple exmample of reading tables from SGDM using JDBC.
+ * This is an applicaiton of reading tables from SGDM using JDBC.
  * Then do operations such join, filter, select, etc.
  * Finally write data into tables in PostgreSQL using JDBC, assuming
  * there is a schema called data_quality. Tables to write will be
@@ -48,7 +46,7 @@ import mdmutil._
  * To run this on your local machine:
  *
  *    ./bin/spark-submit --class "MDM" --master local[*] \
- *         /home/admin/apps/MDM/target/scala-2.11/mdm_2.11-1.0.jar
+ *         $MDM_HOME/target/scala-2.11/mdm_2.11-1.0.jar
  */
 
 object MDM {
@@ -80,9 +78,7 @@ object MDM {
     val pgvoltoutsum = "data_quality.voltoutsum"
 
     val sparkConf = new SparkConf().setAppName("MDM")
-    //sparkConf.registerKryoClasses(Array(classOf[MDM], classOf[MLfuncs], classOf[DataProcessing]))
     val sc = new SparkContext(sparkConf)
-    //val sqlContext = new SQLContext(sc)
     val sqlContext = new HiveContext(sc)
 
     // Importing the SQL context gives access to all the SQL functions and implicit conversions.
