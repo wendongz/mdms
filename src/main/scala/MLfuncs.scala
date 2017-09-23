@@ -63,11 +63,6 @@ class MLfuncs extends Serializable {
 
   val interactiveMeter = config.getString("mdms.interactive_meter")
   val meterIDs = config.getLongList("mdms.meterids.ids")
-
-  // Configure log
-//  PropertyConfigurator.configure(SparkHome + "/conf/log4j.properties")
-//  val log = LogManager.getRootLogger()
-//  log.setLevel(Level.INFO)
    
   // Output table names
   val pgHourGroup = "data_quality.hourgroup" 
@@ -137,9 +132,6 @@ class MLfuncs extends Serializable {
 
     // Get active power data
     val apDF = pwrDF.filter("DATA_TYPE=1 and POWER is not null")
- 
-    //val hrP = power2DF.select("P1","P5","P9","P13","P17","P21","P25","P29","P33","P37","P41","P45","P49","P53","P57","P61","P65","P69","P73","P77","P81","P85","P89","P93")
-    //val hrP2 = hrP.na.drop()  // dropping rows containing any null values
 
     // Preparing training data
     val hrP = apDF.filter("pmod(dti, 4) = 1").select("POWER")
@@ -860,19 +852,6 @@ class MLfuncs extends Serializable {
      * 3 cluster results for one-month data (1000 meters) - seems not fit the real classifications.
      * therefore, we use the "mp_attr_code" column for load types
      */
-    /*
-     * 0:  [123.8857296678122,0.118494746884307,0.34315819014891186], 873
-     * 1:  [912.2335701754388,0.5470634064912281,1.2927517543859652], 114
-     * 2:  [3036.5732923076926,1.3335420715384614,3.026184615384616], 13
-     */
-
-    // Array of 24-Hours PV Feature for each loadtype, season, daytype
-    // Access its value using getOrElse("0").asInstanceOf[Int]
-    //var arrHrPVRDD = new ArrayBuffer[RDD[(Vector, Long)]]()
-
-    // Array of k-means clustering results for each loadtype, season, daytype
-    //var arrKMM     = new ArrayBuffer[KMeansModel]()
-    //var arrKMMOpt  = new ArrayBuffer[Option[KMeansModel]]()
 
     // Array of hourly group info
     var arrHGOpt = new ArrayBuffer[Option[RDD[(Int, Iterable[Long])]]]()
